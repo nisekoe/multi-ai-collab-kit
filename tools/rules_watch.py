@@ -54,7 +54,11 @@ def sync(targets: list[str], force: bool = False) -> int:
         return 2
     digest = core_digest()
     state = load_state()
-    changed = force or state.get("digest") != digest
+    # 2026-11-24：只比 digest 不够——新用户克隆时若带着旧的 .sync-state.json（digest 已一致、
+    # targets 里却是维护者的本机路径），第一次同步会被判“没变”而只做 --check，目标永远拿不到规则。
+    # 新目标不在状态里也必须写一次。
+    new_targets = set(targets) - set(state.get("targets") or [])
+    changed = force or state.get("digest") != digest or bool(new_targets)
     rc = 0
     for t in targets:
         if changed:

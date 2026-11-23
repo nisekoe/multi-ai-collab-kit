@@ -52,6 +52,20 @@ class RulesWatchTest(unittest.TestCase):
         r = run("--once", "--target", self.target)
         self.assertEqual(r.returncode, 3, r.stdout)
 
+    def test_new_target_syncs_even_if_digest_matches(self):
+        # 状态里 digest 与正本一致、targets 列的是别的路径（克隆自维护者本机的旧状态）：
+        # 新目标也必须写一次，不能只做 --check 把目标永远留在“无规则段落”。
+        run("--once", "--target", self.target, "--force")
+        state = json.loads(open(STATE, encoding="utf-8").read())
+        state["targets"] = [os.path.join(self.tmp, "someone-elses-AGENTS.md")]
+        with open(STATE, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(state, ensure_ascii=False))
+        with open(self.target, "w", encoding="utf-8") as fh:
+            fh.write("# 说明\n")
+        r = run("--once", "--target", self.target)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("MACK-RULES:BEGIN", open(self.target, encoding="utf-8").read())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

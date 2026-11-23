@@ -6,24 +6,24 @@
 
 - **闸放在真正发消息的那一层**：不管从哪调过来，只要最终落到发送函数，就要过闸。
 - **上层已判定时不许二次判定**：统一入口（`send_codex.py`）判定后，调用下层发送器要带 `--skip-gate`，否则会被自己的闸再拦一次。
-- **放行口只有一个**：`--skip-gate` 或环境变量 `DAFEIYU_GATE=0`；只允许统一入口在完成判定后使用，其他脚本不许用。
+- **放行口只有一个**：`--skip-gate`；只允许统一入口（`send_codex.py`／`picker.py`）在完成判定后使用，其他脚本不许用。
 
 ## 二、覆盖矩阵
 
 | 入口 | 是否过闸 | 怎么覆盖 |
 |---|---|---|
-| `send_codex.py`（统一入口） | 是 | 自己先跑 `delivery_gate` + `route_policy`，判定 deliver/queue 才投 |
-| `reach_gpt.py`（真发送层） | 是 | 发送前再跑一次 `delivery_gate` + `route_policy`；被拒返回 6，要确认返回 4 |
+| `send_codex.py`（统一入口） | 是 | 裸 `--thread`（无 `--task/--ask/--reply-to/--confirmed`）直接拒（exit 4）；判定后带 `--skip-gate` 调下层 |
+| `reach_gpt.py`（真发送层） | 是 | 发送前自己核：目标不存在／已归档／工作区受保护／工作区漂移／云端无 rollout／写者占用／回合中断；被拒 6，要确认 4 |
 | `picker.py` → Codex | 是 | 它通过 `reach_gpt.py` 提交，闸在发送层生效 |
-| `picker.py` → Porta 腿（Antigravity） | 部分 | 走 `porta_adapter`；绑定是否过期仍要靠 `delivery_gate --porta --binding` 主动查，未强制 |
-| `reach_momo.py` / `push_dsh_ningning.py` | 部分 | 有「按身份解析、多候选拒绝」的保护，也有回执记录；没有 Codex 那套归档/保护/写者检查（这两条腿没有这些状态） |
+| `picker.py` → Porta 腿（Antigravity） | 是 | 走 `porta_adapter` 的 `binding_verdict`：选最新放行；旧绑定+有新会话 → 拒（`new_window_needs_confirm`） |
+| `reach_dsh.py`（DSH 港湾腿） | 部分 | 有「按身份解析、多候选拒绝」的保护与回执记录；没有 Codex 那套归档/保护/写者检查（这条腿没有这些状态） |
 | 手工在 Python 里 import 发送函数 | 视实现 | 只要最终调到 `reach_gpt` 就过闸；直接拼 HTTP 的则绕过 |
 
 ## 三、已知缺口
 
-1. **Porta 腿的绑定新鲜度**：闸只能给建议（列出比绑定更新的会话），要不要拒由调用方决定。原因是「新窗口」有时正是你想投的目标，硬拒会误伤。
-2. **直连 HTTP**：任何自己拼 `POST /api/harbor/say` 的脚本都在闸外；这类脚本应改成调 `reach_momo.py` / `push_dsh_ningning.py`。
-3. **`DAFEIYU_GATE=0` 是全局开关**：设了它等于关闸，只建议在离线测试里用。
+1. **Porta 腿的绑定新鲜度**：已硬拦——选的是旧绑定、且列表里已有更新会话时拒绝并给出更新的那条；要人确认后才放行。
+2. **直连 HTTP**：任何自己拼 `POST /api/harbor/say` 的脚本都在闸外；这类脚本应改成调 `reach_dsh.py`。
+3. **`--skip-gate` 是唯一放行口**：只允许 `send_codex.py` 与 `picker.py` 在判定后使用；其他脚本直接调 `reach_gpt.py --skip-gate` 等于绕闸。
 
 ## 四、怎么验证闸真的生效
 
@@ -35,7 +35,7 @@ python tools/reach_gpt.py --thread <已归档UUID> --text probe --dry-run
 python tools/reach_gpt.py --thread <正常UUID> --text probe --dry-run
 
 # 统一入口：先判后投
-python send_codex.py --thread <UUID> --file 正文.txt
+python tools/send_codex.py --thread <UUID> --file 正文.txt
 ```
 
 退出码：0 通过；4 需要人确认；6 硬拒。

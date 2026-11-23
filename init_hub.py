@@ -105,7 +105,7 @@ def main(argv=None) -> int:
     ok = check(root)
     print("\n把下面这段贴进你的 AI 注入层：\n")
     print(f"档案根是 {root}；写文本走 safe_write.py，写账本走 ledger_lock.py；"
-          "需要人选窗口时走卡片服务；投递前先过 delivery_gate。")
+          "需要人选窗口时走卡片服务；投递前先核对目标（归档／受保护／工作区漂移／是否正忙）。")
     return 0 if ok else 1
 
 

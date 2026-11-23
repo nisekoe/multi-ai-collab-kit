@@ -26,7 +26,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-CARD_DIR = Path(os.environ.get("CARD_DIR") or r"F:\hub\_state\cards")
+CARD_DIR = Path(os.environ.get("CARD_DIR")
+                or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / ".multi-ai-collab-kit" / "cards"))
 IS_WINDOWS = os.name == "nt"
 HOST, PORT = "127.0.0.1", 8790
 _inbox: "queue.Queue[dict]" = queue.Queue()
@@ -468,7 +469,9 @@ def popups() -> int:
         except Exception:
             import traceback
             try:
-                Path(r"F:\hub\_local\_tmp\card_error.log").write_text(
+                _logdir = CARD_DIR.parent / "logs"
+                _logdir.mkdir(parents=True, exist_ok=True)
+                (_logdir / "card_error.log").write_text(
                     time.strftime("%Y-%m-%d %H:%M:%S\n") + traceback.format_exc(), encoding="utf-8")
             except Exception:
                 pass

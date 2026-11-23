@@ -12,7 +12,7 @@
 落地可以是一个很小的状态文件：
 
 ```json
-{ "task": "选窗器-收口", "rounds": 5, "limit": 6, "last_sender": "momo" }
+{ "task": "选窗器-收口", "rounds": 5, "limit": 6, "last_sender": "A" }
 ```
 
 发送前读一次，`rounds >= limit` 就停下来问人。
@@ -28,9 +28,9 @@
 示例：
 
 ```
-[精简] momo→gpt | task=选窗器-收口 | round=4/6
+[精简] A→B | task=选窗器-收口 | round=4/6
 结论：闸已覆盖 send_codex，picker 未接。
-证据：F:\hub\...\验收.md#L12
+证据：<你的档案根>\...\验收.md#L12
 请回：picker 是否接闸（是/否），不用解释。
 ```
 

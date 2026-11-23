@@ -28,7 +28,9 @@ import time
 from pathlib import Path
 
 STATES = ("refused", "queued", "consumed", "unknown")
-HISTORY = Path(os.environ.get("DELIVERY_HISTORY") or r"F:\hub\_state\投递历史.jsonl")
+HISTORY = Path(os.environ.get("DELIVERY_HISTORY")
+               or ((Path(os.environ.get("LOCALAPPDATA") or Path.home())
+                    / ".multi-ai-collab-kit") / "投递历史.jsonl"))
 
 
 def judge(*, exit_code: int = 0, accepted: bool | None = None, landed: bool | None = None,

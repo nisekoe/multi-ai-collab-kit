@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -21,9 +22,12 @@ from pathlib import Path
 
 BASE = "http://127.0.0.1:8790"
 HERE = Path(__file__).resolve().parent
-PYW = Path(r"F:\program\deepseek-dafeiyu\uv\tools\astrbot\Scripts\pythonw.exe")
+PYW = Path(sys.executable).with_name("pythonw.exe") if os.name == "nt" else Path(sys.executable)
+if not PYW.is_file():
+    PYW = Path(sys.executable)
 SERVICE = HERE / "card_service.py"
-LOG = Path(r"F:\hub\_local\_tmp\card_service_boot.log")
+LOG = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
+       / ".multi-ai-collab-kit" / "logs" / "card_service_boot.log")
 
 
 def alive(timeout: float = 2.0) -> bool:
