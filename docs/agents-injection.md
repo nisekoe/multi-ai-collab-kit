@@ -23,6 +23,10 @@ python tools/init_rules.py --target AGENTS.md --check   # 核对有没有漂移
 
 ## 三、以后规则变了怎么办
 
+手动版：改 `rules/core.md`，重跑安装器。
+
+自动版（推荐）：`python tools/rules_watch.py --watch --target AGENTS.md`——正本一变就自动刷；没变时只做校验，发现目标被手改会报漂移。
+
 1. 改 `rules/core.md`；
 2. 重新跑一次安装器（同一个命令，会替换旧段落）；
 3. `--check` 显示“与正本一致”即可。
