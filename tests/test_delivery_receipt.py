@@ -3,11 +3,15 @@
 # -*- coding: utf-8 -*-
 """test_delivery_receipt.py —— P1-1 回执证据字段自测（含反向用例）"""
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 import importlib.util, os, sys
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    HERE = os.path.dirname(os.path.abspath(__file__))
+    HERE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     sys.path.insert(0, HERE)
     spec = importlib.util.spec_from_file_location("dr", os.path.join(HERE, "delivery_receipt.py"))
     dr = importlib.util.module_from_spec(spec); spec.loader.exec_module(dr)

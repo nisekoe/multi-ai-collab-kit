@@ -5,6 +5,10 @@ Covers all GPT v0.5 final review findings (#1a/#1b/#1c, #2a/#2b, #3) + full regr
 Uses HostCardChannel (test-boundary host UI simulator) and sys.stdin patching at test boundary only.
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import io
 import json

@@ -18,7 +18,7 @@ python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
 
 最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
 
-需要人选窗口时再启动常驻卡片服务：`python card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
+需要人选窗口时再启动常驻卡片服务：`python tools/card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
 
 ---
 
@@ -111,4 +111,4 @@ New-Item -ItemType File -Force "$hub\30-roles\planner_bot\scratch.md", "$hub\30-
 
 1. 将 `plugins/dsh-plugin-harbor/` 目录放到 DSH 插件加载目录；
 2. 参考 `templates/cordis.patch.yml` 在你的 profile 中挂载插件（注意 `name: dsh-plugin-harbor` 必填）；
-3. 重启 DSH 后，访问 `/api/harbor/health` 或运行 `python channel_params.py` 验证连通性。
+3. 重启 DSH 后，访问 `/api/harbor/health` 或运行 `python tools/channel_params.py` 验证连通性。

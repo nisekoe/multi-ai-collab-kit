@@ -21,6 +21,10 @@ r"""safe_write 的反向用例（P0-2 验收）。
 """
 
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import importlib.util
 import os

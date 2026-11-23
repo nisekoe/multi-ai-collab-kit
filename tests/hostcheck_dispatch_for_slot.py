@@ -1,3 +1,7 @@
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 import _testenv; _testenv.sandbox()
 
 import os

@@ -30,7 +30,7 @@ python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
 
 最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
 
-需要人选窗口时再启动常驻卡片服务：`python card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
+需要人选窗口时再启动常驻卡片服务：`python tools/card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
 
 ---
 
@@ -124,10 +124,10 @@ $env:PROTECTED_WORKSPACES = "protected-workspace,private-zone"
 python paths.py
 
 # 2) 验证 ORIGIN 信任头与交接四字段门禁
-python handoff_lint.py --demo
+python tools/handoff_lint.py --demo
 
 # 3) 验证传球门（fail-closed 判据表）
-python pass_gate.py --demo
+python tools/pass_gate.py --demo
 
 # 4) 验证统一选窗器与智能调度层核心离线单测
 python test_window_picker.py
@@ -139,7 +139,7 @@ python test_stage3_lifecycle_handoff.py
 ### 第 5 步：只读预演投递（`--dry-run`）
 ```bash
 # 模拟解析目标并查看将要注入的 ORIGIN 信封（不会真的发消息）
-python reach_dsh.py --origin review_bot --dry-run --text "示例预演消息"
+python tools/reach_dsh.py --origin review_bot --dry-run --text "示例预演消息"
 ```
 
 ---

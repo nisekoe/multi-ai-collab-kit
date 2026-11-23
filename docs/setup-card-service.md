@@ -7,7 +7,7 @@
 需要：Windows + Python 3.9+（自带 tkinter，无需第三方库）。
 
 1. 把 `card_service.py`、`ensure_card_service.py` 放到你的工具目录（和 `picker.py` 等同级即可）。
-2. 直接启动：`python card_service.py`。默认监听 `127.0.0.1:8790`，卡片数据写到 `~/.collab-kit/cards`；可用环境变量 `CARD_DIR` 改位置。
+2. 直接启动：`python tools/card_service.py`。默认监听 `127.0.0.1:8790`，卡片数据写到 `~/.collab-kit/cards`；可用环境变量 `CARD_DIR` 改位置。
 3. 看到「卡片服务 http://127.0.0.1:8790/」就算起来了；浏览器打开该地址是网页版兜底。
 
 ## 二、设开机自启（常驻）

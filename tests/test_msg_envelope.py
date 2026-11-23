@@ -3,11 +3,15 @@
 # -*- coding: utf-8 -*-
 """test_msg_envelope.py —— 信封＋ORIGIN 名牌自测（P1-3，含向后兼容/幂等/反向用例）"""
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 import importlib.util, os, sys
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    HERE = os.path.dirname(os.path.abspath(__file__))
+    HERE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("me", os.path.join(HERE, "msg_envelope.py"))
     me = importlib.util.module_from_spec(spec); spec.loader.exec_module(me)
     fails, cnt = [], [0]

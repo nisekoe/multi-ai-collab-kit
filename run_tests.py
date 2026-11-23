@@ -19,6 +19,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def sandbox() -> str:
+    tests = os.path.join(HERE, "tests")
+    if tests not in sys.path:
+        sys.path.insert(0, tests)
     import _testenv
     return _testenv.sandbox()
 
@@ -28,10 +31,10 @@ def main() -> int:
     env = dict(os.environ)
     env["ARCHIVE_ROOT"] = root
     env["LOCALAPPDATA"] = os.path.join(root, "_local")
-    env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join([HERE, os.path.join(HERE, "tools"), env.get("PYTHONPATH", "")])
     env.setdefault("PYTHONIOENCODING", "utf-8")
     print("沙盒档案根：", root)
-    cmd = [sys.executable, "-m", "unittest", "discover", "-s", HERE, "-p", "test_*.py"]
+    cmd = [sys.executable, "-m", "unittest", "discover", "-s", os.path.join(HERE, "tests"), "-p", "test_*.py"]
     rc = subprocess.call(cmd, cwd=HERE, env=env)
     if rc == 0:
         print("\n全部通过")

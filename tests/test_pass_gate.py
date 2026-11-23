@@ -3,6 +3,10 @@
 跑法：python tools\\test_pass_gate.py
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import json
 import subprocess

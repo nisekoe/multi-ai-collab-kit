@@ -29,10 +29,10 @@
 
 ```bash
 # 归档线：应拒绝，退出码 6
-python reach_gpt.py --thread <已归档UUID> --text probe --dry-run
+python tools/reach_gpt.py --thread <已归档UUID> --text probe --dry-run
 
 # 正常线：应通过（dry-run 不真投）
-python reach_gpt.py --thread <正常UUID> --text probe --dry-run
+python tools/reach_gpt.py --thread <正常UUID> --text probe --dry-run
 
 # 统一入口：先判后投
 python send_codex.py --thread <UUID> --file 正文.txt

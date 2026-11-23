@@ -16,6 +16,10 @@ D. **动态参数不让人填**：sessionId 由 /latest 现解析（这里只验
 退出码：0 全过；1 有 FAIL。
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import importlib.util
 import json
@@ -25,7 +29,7 @@ import tempfile
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-TOOLS = os.path.dirname(os.path.abspath(__file__))
+TOOLS = _TOOLS
 TMP = tempfile.mkdtemp(prefix="chan_case_")
 os.environ["DSH_INBOUND_LEDGER"] = os.path.join(TMP, "inbound.jsonl")
 os.environ["DSH_IDENTITY_CACHE"] = os.path.join(TMP, "cache.json")

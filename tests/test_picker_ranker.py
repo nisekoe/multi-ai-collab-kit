@@ -6,6 +6,10 @@ rejection, immutable render-time option snapshots, current-page-only card valida
 P3 label collision, and P5 literal inner spaces.
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import sys
 import tempfile

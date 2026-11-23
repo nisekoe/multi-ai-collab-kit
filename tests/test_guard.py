@@ -14,6 +14,10 @@
   9 不认识库名 → 2（不瞎猜路径）
   10/11 同一秒的 worklog：finish 之后的未收尾必须报、配对完的不许报（钉死"按行序不按时间"）
 """
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 import importlib.util
 import io
 import json

@@ -1,6 +1,10 @@
 """paths.py 寻根契约测试（F3 一页纸 2026-11-22 验收①）。
 覆盖：4 级寻根各优先级／写根绑定拒哨兵副本／相对解析防逃逸／版本与命名空间安全闸／中文空格百分号根／根缺失。
 """
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import os
 import sys

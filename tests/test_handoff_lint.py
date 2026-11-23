@@ -10,6 +10,10 @@
 跑法：python tools\\test_handoff_lint.py      退出码 0 全过 / 1 有失败
 """
 from __future__ import annotations
+import os as _os, sys as _sys
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
 
 import importlib.util
 import os
@@ -18,7 +22,7 @@ import sys
 if __name__ == "__main__":
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    HERE = os.path.dirname(os.path.abspath(__file__))
+    HERE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("hl", os.path.join(HERE, "handoff_lint.py"))
     hl = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hl)
