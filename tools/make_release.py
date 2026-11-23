@@ -59,6 +59,7 @@ def main(argv=None) -> int:
     ap.add_argument("--notes", default="", help="一句话说明这版改了什么")
     ap.add_argument("--min-dsh", default="0.4.0", help="要求的最低 DSH 版本")
     ap.add_argument("--channel", default="stable")
+    ap.add_argument("--manifest-out", default="kit-manifest.json", help="清单写哪（默认仓库根）")
     a = ap.parse_args(argv)
 
     files = tracked_files()
@@ -82,7 +83,7 @@ def main(argv=None) -> int:
         "plugins": [],
         "notes": a.notes or "见仓库提交记录",
     }
-    manifest_path = REPO / "kit-manifest.json"
+    manifest_path = (REPO / a.manifest_out) if not os.path.isabs(a.manifest_out) else Path(a.manifest_out)
     io.open(manifest_path, "w", encoding="utf-8", newline="\n").write(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
 
