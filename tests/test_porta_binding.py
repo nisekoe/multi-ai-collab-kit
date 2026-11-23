@@ -33,9 +33,15 @@ class BindingVerdictTest(unittest.TestCase):
         self.assertEqual(v["reason"], "no_binding_need_confirm")
 
     def test_chosen_not_bound(self):
-        v = pa.binding_verdict("cccc3333-0000", "bbbb2222-0000", ROWS)
+        rows = ROWS + [{"id": "cccc3333-0000", "last": "2026-11-22T10:00:00"}]
+        v = pa.binding_verdict("aaaa1111-0000", "cccc3333-0000", rows)
         self.assertFalse(v["ok"])
         self.assertEqual(v["reason"], "chosen_not_bound")
+
+    def test_binding_missing(self):
+        v = pa.binding_verdict("cccc3333-0000", "bbbb2222-0000", ROWS)
+        self.assertFalse(v["ok"])
+        self.assertEqual(v["reason"], "binding_missing")
 
     def test_bound_is_newest_passes(self):
         v = pa.binding_verdict("aaaa1111-0000", "aaaa1111-0000", ROWS)

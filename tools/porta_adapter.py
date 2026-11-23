@@ -1093,7 +1093,7 @@ class PortaAdapter:
         # 投前二次复验（防选完卡片犹豫期间窗变 RUNNING/关闭/归档）；同一份枚举既供复验也供 POST（GPT桥复审#2）
         er = self.enumerate()
 
-        # 投前现查绑定：有新窗口出现时不许默认继续投旧窗（腐竹 2026-11-24 口径）
+        # 投前现查绑定：有新窗口出现时不许默认继续投旧窗（2026-11-24 口径）
         _binding = (binding if binding is not None else os.environ.get("PORTA_BINDING", "")).strip()
         if not dry_run:
             try:
