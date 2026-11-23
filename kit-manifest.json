@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "channel": "stable",
   "releasedAt": "2026-11-24",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.3.0.zip",
-      "sha256": "8e1c3ec5b9c09356675a4689398c5fbda7526142a0440b4e153aadd8c7eb75bb",
-      "size": 353211
+      "name": "kit-0.3.1.zip",
+      "sha256": "e08b0fdde7bca51fa02445f2bbadf795272b5706333483eca4acb3bb9dd61ab9",
+      "size": 356459
     }
   ],
   "plugins": [],
-  "notes": "规则安装器＋回执四态＋自动更新"
+  "notes": "修正更新器弃用警告"
 }
