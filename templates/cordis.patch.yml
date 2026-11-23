@@ -1,0 +1,14 @@
+# Harbor 插件配置模板（供 DSH profile 挂载使用）
+# 注意：`name` 必须填写，否则宿主可能静默忽略该插件配置。
+- insert:
+    - id: dsh-plugin-harbor
+      name: dsh-plugin-harbor
+      config:
+        # 仅当明确需要局域网访问时才设为 true，并填写 lanHost/lanPort 与强口令 token
+        allowLan: false
+        lanHost: '127.0.0.1'
+        lanPort: 18097
+        # 强烈建议通过本机库外 secrets_dir 注入，切勿将真实口令提交至 Git
+        token: ''
+        feishuReplyToken: ''
+        feishuSessionCwd: 'default-workspace'

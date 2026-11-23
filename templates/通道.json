@@ -1,0 +1,20 @@
+{
+  "_note": "互通通道配置模板：请复制到你的 <ARCHIVE_ROOT>/_state/通道.json 并按本机实际地址填写。凭据请放在库外 secrets_dir（不要把真实 token 提交到 Git）。",
+  "desktop_bot": {
+    "host": "127.0.0.1",
+    "port": 18097,
+    "token": "",
+    "token_secret": "harbor_desktop",
+    "feishu_reply_token": "",
+    "feishu_reply_token_secret": "harbor_feishu_reply",
+    "session_cwd": "default-workspace",
+    "policy": "open"
+  },
+  "feishu_bot": {
+    "host": "127.0.0.1",
+    "port": 18098,
+    "token": "",
+    "token_secret": "harbor_feishu",
+    "policy": "open"
+  }
+}

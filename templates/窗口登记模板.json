@@ -1,0 +1,12 @@
+{
+  "_note": "活跃项目与窗口登记模板（00-config/active_projects.json 示例，零真实窗口 UUID，零本机绝对路径）。",
+  "schema_version": "0.4.0",
+  "projects": {
+    "demo-alpha": {
+      "name": "协作测试示例项目",
+      "root": "20-projects/demo-alpha",
+      "participants": ["planner_bot", "review_bot", "coder_bot"],
+      "context_file": "20-projects/demo-alpha/CONTEXT.md"
+    }
+  }
+}

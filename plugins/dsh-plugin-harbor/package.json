@@ -1,0 +1,19 @@
+{
+  "name": "dsh-plugin-harbor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "港湾：给飞书助手一个本地/局域网入口，把一句话投进指定 DSH 会话（走 sessionController.prompt，不碰 mux 协议）",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  }
+}

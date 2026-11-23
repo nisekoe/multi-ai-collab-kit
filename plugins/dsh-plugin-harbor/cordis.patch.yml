@@ -1,0 +1,11 @@
+# 港湾插件自己的 patch：被 profile 选中时，由它把插件挂上去。
+# 注意：`name` 必须写——只写 id + config 会静默不生效（2026-11-10 踩过）。
+- insert:
+    - id: dsh-plugin-harbor
+      name: dsh-plugin-harbor
+      config:
+        # 允许局域网访问（用户 2026-11-11 要求：他要从别的设备访问）
+        allowLan: true
+        # 口令：留空则不需要。**开局域网时务必填**，否则同网段任何人都能往会话里塞话。
+        # 由用户或飞书助手在 profile patch 里覆盖成自己的口令。
+        token: ''

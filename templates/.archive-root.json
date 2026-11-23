@@ -1,0 +1,12 @@
+{
+  "archive_id": "user-multiagent-hub",
+  "structure_version": "0.4.0",
+  "namespaces": {
+    "config": "00-config",
+    "governance": "10-governance",
+    "projects": "20-projects",
+    "roles": "30-roles",
+    "state": "_state",
+    "local": "_local"
+  }
+}
