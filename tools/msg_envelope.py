@@ -62,7 +62,7 @@ def new_id(prefix: str = "m", when: datetime | None = None) -> str:
 def new_envelope(task_id: str = "", reply_to: str = "", msg_id: str = "", peer_agent: str = "",
                  from_addr: str = "", to_addr: str = "") -> dict:
     """造一组信封字段；空的就不放进去，别留一串空串在请求体里。
-    peer_agent（P1-3）：发件同僚 AI 名（maomao/gpt…），用于正文首行 ORIGIN 信任名牌。
+    peer_agent（P1-3）：发件同僚 AI 名（如 planner/reviewer…），用于正文首行 ORIGIN 信任名牌。
     from_addr/to_addr（2026-11-23 v2）：回程地址，写法 leg|host|session，由 addr() 生成。"""
     env = {"msgId": (msg_id or "").strip() or new_id("m")}
     if (task_id or "").strip():

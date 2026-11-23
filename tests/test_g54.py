@@ -1,4 +1,4 @@
-"""G-54 四组小样：同时来件各回原窗、同标题撞旧绑定、停止后队列项、同号正文未结束。
+﻿"""G-54 四组小样：同时来件各回原窗、同标题撞旧绑定、停止后队列项、同号正文未结束。
 
 四组都只测判定与信封层，不发真消息、不耗额度。
 """
@@ -19,8 +19,8 @@ class G54Test(unittest.TestCase):
         """两条同时来件：各自带自己的回程地址，回话按地址回，不串。"""
         a_from = M.addr("harbor", "local", "session-aaa")
         b_from = M.addr("harbor", "local", "session-bbb")
-        env_a = M.new_envelope(task_id="t1", reply_to=a_from, peer_agent="momo", from_addr=a_from)
-        env_b = M.new_envelope(task_id="t1", reply_to=b_from, peer_agent="momo", from_addr=b_from)
+        env_a = M.new_envelope(task_id="t1", reply_to=a_from, peer_agent="peer_a", from_addr=a_from)
+        env_b = M.new_envelope(task_id="t1", reply_to=b_from, peer_agent="peer_a", from_addr=b_from)
         self.assertNotEqual(a_from, b_from)
         for env, want in ((env_a, "session-aaa"), (env_b, "session-bbb")):
             parts = M.split_addr(env["replyTo"])
