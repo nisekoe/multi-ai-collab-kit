@@ -22,8 +22,26 @@ import re
 from datetime import datetime
 
 HEADER_PAT = re.compile(r"^〔(?P<body>[^〕]*)〕\s*$")
-FIELD_PAT = re.compile(r"(任务|消息|回)\s*(?P<v>[^\s·〕]+)")
+FIELD_PAT = re.compile(r"(任务|消息|回|发|收)\s*(?P<v>[^\s·〕]+)")
 ORIGIN_PAT = re.compile(r"^\[ORIGIN\s+peer_agent=(?P<name>[^\s\]|]+)[^\]]*\]\s*$")
+ADDR_SEP = "|"
+
+
+def addr(leg: str, host: str, session: str) -> str:
+    """回程地址的紧凑写法：leg|host|session（session 是平台会话号）。"""
+    return ADDR_SEP.join([(leg or "").strip(), (host or "").strip(), (session or "").strip()])
+
+
+def split_addr(value: str) -> dict:
+    parts = (value or "").split(ADDR_SEP)
+    if len(parts) != 3:
+        return {}
+    return {"leg": parts[0], "hostId": parts[1], "sessionId": parts[2]}
+
+
+def digest(text: str) -> str:
+    import hashlib
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
 
 
 def origin_line(peer_agent: str) -> str:
@@ -41,9 +59,11 @@ def new_id(prefix: str = "m", when: datetime | None = None) -> str:
     return "%s-%s-%s" % (prefix, t.strftime("%Y%m%d-%H%M"), _rnd())
 
 
-def new_envelope(task_id: str = "", reply_to: str = "", msg_id: str = "", peer_agent: str = "") -> dict:
+def new_envelope(task_id: str = "", reply_to: str = "", msg_id: str = "", peer_agent: str = "",
+                 from_addr: str = "", to_addr: str = "") -> dict:
     """造一组信封字段；空的就不放进去，别留一串空串在请求体里。
-    peer_agent（P1-3）：发件同僚 AI 名（review_bot/gpt…），用于正文首行 ORIGIN 信任名牌。"""
+    peer_agent（P1-3）：发件同僚 AI 名（maomao/gpt…），用于正文首行 ORIGIN 信任名牌。
+    from_addr/to_addr（2026-11-23 v2）：回程地址，写法 leg|host|session，由 addr() 生成。"""
     env = {"msgId": (msg_id or "").strip() or new_id("m")}
     if (task_id or "").strip():
         env["taskId"] = task_id.strip()
@@ -51,11 +71,15 @@ def new_envelope(task_id: str = "", reply_to: str = "", msg_id: str = "", peer_a
         env["replyTo"] = reply_to.strip()
     if (peer_agent or "").strip():
         env["peerAgent"] = peer_agent.strip()
+    if (from_addr or "").strip():
+        env["from"] = from_addr.strip()
+    if (to_addr or "").strip():
+        env["to"] = to_addr.strip()
     return env
 
 
 def header_line(env: dict) -> str:
-    """正文首行那一行。三件都没有就返回空串（不写头）。"""
+    """正文首行那一行。什么都没有就返回空串（不写头）。"""
     parts = []
     if env.get("taskId"):
         parts.append("任务 %s" % env["taskId"])
@@ -63,6 +87,10 @@ def header_line(env: dict) -> str:
         parts.append("消息 %s" % env["msgId"])
     if env.get("replyTo"):
         parts.append("回 %s" % env["replyTo"])
+    if env.get("from"):
+        parts.append("发 %s" % env["from"])
+    if env.get("to"):
+        parts.append("收 %s" % env["to"])
     return "〔%s〕" % " · ".join(parts) if parts else ""
 
 
@@ -99,9 +127,27 @@ def parse(text: str) -> dict:
         if not m:
             continue
         for label, value in FIELD_PAT.findall(m.group("body")):
-            key = {"任务": "taskId", "消息": "msgId", "回": "replyTo"}[label]
+            key = {"任务": "taskId", "消息": "msgId", "回": "replyTo", "发": "from", "收": "to"}[label]
             out.setdefault(key, value)
     return out
+
+
+def accept_incoming(text: str, seen: dict | None = None) -> dict:
+    """收件判据（2026-11-23 v2）：去重、同号异文拒收、没有回程地址的标 legacy_unverified。
+    seen: {msgId: bodySha256}；**模块只读不写，调用方接受后要把摘要记进 seen**。返回 {decision, reason, from, msgId}，decision ∈ accept/duplicate/reject/legacy_unverified。"""
+    seen = seen or {}
+    h = parse(text)
+    mid = h.get("msgId")
+    if not mid:
+        return {"decision": "reject", "reason": "no_msg_id", "from": h.get("from"), "msgId": None}
+    d = digest(text)
+    if mid in seen:
+        if seen[mid] != d:
+            return {"decision": "reject", "reason": "same_id_diff_body", "from": h.get("from"), "msgId": mid}
+        return {"decision": "duplicate", "reason": "already_seen", "from": h.get("from"), "msgId": mid}
+    if not h.get("from"):
+        return {"decision": "legacy_unverified", "reason": "no_address", "from": None, "msgId": mid}
+    return {"decision": "accept", "reason": "ok", "from": h["from"], "msgId": mid, "bodySha256": d}
 
 
 def main() -> int:
