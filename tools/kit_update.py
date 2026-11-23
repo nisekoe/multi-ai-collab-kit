@@ -12,6 +12,7 @@ from datetime import datetime
 import hashlib
 import http.client
 import json
+import ntpath
 import os
 from pathlib import Path, PureWindowsPath
 import re
@@ -260,6 +261,13 @@ def download_archive(url, asset, target):
         raise UpdateError("Asset SHA-256 does not match the manifest")
 
 
+def is_windows_reserved(part):
+    path = PureWindowsPath(part)
+    if hasattr(ntpath, "isreserved"):
+        return ntpath.isreserved(path)
+    return path.is_reserved()
+
+
 def extract_archive(archive, destination):
     destination.mkdir()
     try:
@@ -269,7 +277,7 @@ def extract_archive(archive, destination):
                 if any(
                     part in ("", ".", "..")
                     or part.endswith((" ", "."))
-                    or PureWindowsPath(part).is_reserved()
+                    or is_windows_reserved(part)
                     or any(char in '\\:<>"|?*' or ord(char) < 32 for char in part)
                     for part in parts
                 ):
