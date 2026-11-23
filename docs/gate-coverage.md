@@ -15,7 +15,7 @@
 | `send_codex.py`（统一入口） | 是 | 自己先跑 `delivery_gate` + `route_policy`，判定 deliver/queue 才投 |
 | `reach_gpt.py`（真发送层） | 是 | 发送前再跑一次 `delivery_gate` + `route_policy`；被拒返回 6，要确认返回 4 |
 | `picker.py` → Codex | 是 | 它通过 `reach_gpt.py` 提交，闸在发送层生效 |
-| `picker.py` → Porta（猫猫） | 部分 | 走 `porta_adapter`；绑定是否过期仍要靠 `delivery_gate --porta --binding` 主动查，未强制 |
+| `picker.py` → Porta 腿（Antigravity） | 部分 | 走 `porta_adapter`；绑定是否过期仍要靠 `delivery_gate --porta --binding` 主动查，未强制 |
 | `reach_momo.py` / `push_dsh_ningning.py` | 部分 | 有「按身份解析、多候选拒绝」的保护，也有回执记录；没有 Codex 那套归档/保护/写者检查（这两条腿没有这些状态） |
 | 手工在 Python 里 import 发送函数 | 视实现 | 只要最终调到 `reach_gpt` 就过闸；直接拼 HTTP 的则绕过 |
 
