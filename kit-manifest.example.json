@@ -1,0 +1,22 @@
+{
+  "kit": "multi-ai-collab-kit",
+  "version": "0.2.0",
+  "channel": "stable",
+  "releasedAt": "2026-11-23",
+  "minDsh": "0.4.0",
+  "assets": [
+    {
+      "name": "kit-0.2.0.zip",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "size": 123456
+    }
+  ],
+  "plugins": [
+    {
+      "id": "dsh-plugin-harbor",
+      "version": "0.2.0",
+      "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  ],
+  "notes": "Example values. Replace the size and digests with the actual release values before publishing."
+}
