@@ -14,6 +14,7 @@ cd multi-ai-collab-kit
 
 python run_tests.py                 # 全部离线测试（沙盒根，不碰你的真实档案）
 python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
+python tools/init_rules.py --target AGENTS.md   # 把规则正本刷进你的注入层
 ```
 
 最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
