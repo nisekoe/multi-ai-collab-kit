@@ -20,7 +20,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-BASE = "http://127.0.0.1:8790"
+BASE = "http://127.0.0.1:%s" % os.environ.get("CARD_PORT", "8790")
 HERE = Path(__file__).resolve().parent
 PYW = Path(sys.executable).with_name("pythonw.exe") if os.name == "nt" else Path(sys.executable)
 if not PYW.is_file():

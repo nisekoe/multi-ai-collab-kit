@@ -15,7 +15,7 @@ import os
 
 PY = sys.executable
 GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pass_gate.py")
-SPEC = os.path.join(os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "档案库", "工作台", "传球判据.json")
+SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "传球判据.json")
 
 CASES = [
     # (说明, 参数, 期望退出码, 期望结论关键词)

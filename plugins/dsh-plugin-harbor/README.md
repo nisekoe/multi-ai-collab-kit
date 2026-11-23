@@ -48,7 +48,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:PORT/api/harbor/say" -Cont
 ## 安装（待验）
 
 ```
-dsh plugin --profile web add 项目根\档案库\工作台\tools\dsh-plugin-harbor
+dsh plugin --profile web add <仓库路径>\plugins\dsh-plugin-harbor
 ```
 
 然后在 `$DSH_HOME/profiles/web/cordis.patch.yml` 里按上面的 YAML 加一条，重启 web。
@@ -106,6 +106,6 @@ AstrBot 中的飞书助手把真正生成的回复 POST 到 `/api/harbor/feishu_
 `200 {ok:true, accepted:false, duplicate:true}`，**会话里不会再进一条**——
 「不知道对方收到没有」时重投是安全的，不会变成两条。
 
-去重表：`档案库/工作台/_tmp_/消息去重.jsonl`（只留最近 2000 条；读不出来就当没记过，
+去重表：`<档案根>/_local/cache/消息去重.jsonl`（hub 模式；只留最近 2000 条；读不出来就当没记过，
 宁可重复一条也不因为读不了文件卡死投递）。正文首行的那一行头由 `tools/msg_envelope.py` 生成，
 形如 `〔任务 a1 · 消息 m-20261117-1815-a3f1 · 回 m-…〕`——只有填了的字段才出现在头里。

@@ -1,10 +1,15 @@
 # 变更记录
 
-## 未发布
+## 0.3.2（2026-11-24）
 - 修复：`rules_watch.py` 首次同步时，若状态文件里的摘要已与正本一致（例如误带入维护者的旧状态），新目标会被判“没变”而拿不到规则；现在新目标一律写一次
 - 移除：误提交的本机 `rules/.sync-state.json`（已加入 `.gitignore`；它是本机状态，不应随仓库分发）
 - 修复：`card_service.py` / `ensure_card_service.py` / `receipt_tri.py` 的默认路径不再写死维护者本机的绝对路径，改用用户目录下的 `.multi-ai-collab-kit`（可用 `CARD_DIR` / `DELIVERY_HISTORY` 环境变量覆盖）
+- 修复：`card_service.py` 的保护色关键词去掉内部项目名（普通标题不会再被误标为受保护）
+- 修复：`reach_gpt.py` 的 `GPT_DIR` 改为环境变量（不再默认指向维护者的旧目录）
+- 修复：`backup_all.py` 遇到本机不存在的来源时跳过而不是拒绝整包；非 Windows／无对应计划任务时不再调 `schtasks`
+- 修复：卡片服务端口可用 `CARD_PORT` 环境变量改；卡片数据目录与文档一致（`~/.multi-ai-collab-kit/cards`）
 - 文档：`docs/gate-coverage.md` 与仓库实际发送层对齐（去掉未随仓库提供的 `delivery_gate` / `route_policy` / `reach_momo` / `push_dsh_ningning` 引用）
+- 文档：插件安装路径、去重表路径、Codex 受保护工作区示例改为通用说法
 
 ## 0.3.1（2026-11-24）
 - 修复：更新器的 Windows 保留名判断改用标准库接口，Python 3.15 下不再报弃用警告（旧版本行为不变）

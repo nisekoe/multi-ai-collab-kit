@@ -10,6 +10,8 @@ r"""整套备份：把"找不回来就完了"的东西打成一个包（2026-11-
 
 产出：备份\全量-<时间戳>.zip，里面有 manifest.json（每个文件的大小与 sha256）、
 payload/<标签>/… 和仓库的 git bundle。恢复看 tools\restore_all.py。
+SOURCES 默认按维护者环境列（含 AstrBot 记忆库、DSH 会话等）；你的机器上不存在的来源
+会自动跳过，只备存在的；要备自己的清单就改 SOURCES。找不到档案根（第一个来源）时不打包。
 
 用法：
     python tools\backup_all.py             # 打包
@@ -92,6 +94,8 @@ class Report:
 
 def freeze() -> str:
     """停掉会写文件的定时任务，返回停之前的原状态（Ready/Disabled/Running/未知）。"""
+    if os.name != "nt":
+        return "未知"
     try:
         out = subprocess.run(["schtasks", "/query", "/tn", DIGEST_TASK, "/fo", "list"],
                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
@@ -110,11 +114,17 @@ def freeze() -> str:
 
 
 def thaw(prev: str) -> None:
-    if prev in ("Disabled", "已禁用"):
+    if os.name != "nt" or prev in ("Disabled", "已禁用"):
         return
-    subprocess.run(["schtasks", "/change", "/tn", DIGEST_TASK, "/enable"],
-                   capture_output=True, text=True, timeout=30)
-    print("定时任务 %s 已恢复" % DIGEST_TASK)
+    try:
+        r = subprocess.run(["schtasks", "/change", "/tn", DIGEST_TASK, "/enable"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            print("定时任务 %s 已恢复" % DIGEST_TASK)
+        else:
+            print("  ! 定时任务 %s 不在本机，跳过恢复" % DIGEST_TASK)
+    except Exception as exc:  # noqa: BLE001
+        print("  ! 恢复定时任务失败（不影响备份包本身）：%s" % exc)
 
 
 def walk_dir(src: Path, label: str, manifest: list, payload: Path, rep: Report) -> None:
@@ -193,10 +203,15 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-raw", action="store_true", help="保留解开的目录（调试用）")
     args = ap.parse_args(argv)
 
-    missing = [str(p) for _, p, _ in SOURCES if not Path(p).exists()]
-    if missing:
-        print("缺项，先别打包：\n  " + "\n  ".join(missing))
+    missing = [(label, str(p)) for label, p, _ in SOURCES if not Path(p).exists()]
+    core_missing = any(label == "档案库仓库" for label, _ in missing)
+    if core_missing:
+        print("找不到档案根，先跑 init_hub.py；本次不打包")
         return 2
+    if missing:
+        print("以下来源不存在，本次跳过（不阻止打包）：")
+        for label, p in missing:
+            print("  - %s：%s" % (label, p))
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     staging = OUT_DIR / ("全量-%s.staging" % STAMP)
@@ -212,6 +227,9 @@ def main(argv=None) -> int:
     try:
         for label, src, kind in SOURCES:
             src = Path(src)
+            if not src.exists():
+                print("[%s] 跳过（不存在）：%s" % (label, src))
+                continue
             print("[%s] %s" % (label, src))
             if kind == "bundle":
                 head = git_bundle(src, label, manifest, payload, rep)

@@ -29,7 +29,8 @@ from pathlib import Path
 CARD_DIR = Path(os.environ.get("CARD_DIR")
                 or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / ".multi-ai-collab-kit" / "cards"))
 IS_WINDOWS = os.name == "nt"
-HOST, PORT = "127.0.0.1", 8790
+HOST = "127.0.0.1"  # 卡片服务没有鉴权，固定只听本机；端口可用 CARD_PORT 改
+PORT = int(os.environ.get("CARD_PORT", "8790"))
 _inbox: "queue.Queue[dict]" = queue.Queue()
 
 BG = "#FAFBFD"
@@ -74,7 +75,7 @@ def _tag_colors(text: str) -> tuple[str, str]:
         return "#EFF2F6", "#64748B"
     if any(k in t for k in ("云端", "cloud")):
         return "#F2EEFF", "#6741D9"
-    if any(k in t for k in ("保护", "教培", "禁止")):
+    if any(k in t for k in ("保护", "禁止")):
         return "#FFEBEB", "#C92A2A"
     if any(k in t for k in ("跑", "占用", "忙", "running", "冲突")):
         return "#FFF4DC", "#AD5A00"

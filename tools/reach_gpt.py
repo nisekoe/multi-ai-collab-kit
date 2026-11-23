@@ -107,7 +107,7 @@ LOCAL_HOST_ID = "local"  # this standalone bridge uses the local Codex store
 import sys as _ap_sys
 _ap_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import archive_paths  # noqa: E402
-GPT_DIR = os.path.join(os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "档案库", "外部协作", "GPT桌面端")  # codex cwd 兜底/会话匹配，平台侧保持旧根
+GPT_DIR = os.environ.get("GPT_DIR", "")  # 可选：你的 GPT 桌面端工作目录；不设就只按登记册匹配
 RECEIPT = str(archive_paths.resolve("工作台/GPT投递回执.json", for_write=True))
 REG = str(archive_paths.resolve("外部协作/GPT桌面端/会话登记.json", for_write=True))  # 登记册随写开关；hub 改名 GPT桌面端会话登记.json
 
@@ -171,6 +171,8 @@ def sync_reg(snapshot):
 
 
 def _in_gpt_dir(cwd: str) -> bool:
+    if not GPT_DIR:
+        return False
     c = os.path.normcase(os.path.normpath(_plain(cwd)))
     root = os.path.normcase(os.path.normpath(GPT_DIR))
     return c == root or c.startswith(root + os.sep)
@@ -552,7 +554,7 @@ def main(argv=None) -> int:
 
     if args.whoami:
         print(f"codex   ：{codex}")
-        print(f"目标目录：{GPT_DIR}")
+        print(f"目标目录：{GPT_DIR or '（未设置 GPT_DIR）'}")
         if target:
             key = picker.address(snapshot.host_id, target["id"])
             verified = picker.verify_target(snapshot, key)
