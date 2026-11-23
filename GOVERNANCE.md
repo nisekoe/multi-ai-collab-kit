@@ -111,3 +111,5 @@
 6. **送达三态**：refused（有确定未受理证据）／queued（有与消息号、目标相符的受理凭证）／consumed（同一目标出现对应正文，或宿主等值凭证）。查不到凭证就写未知，不许用「队列行消失、退出码 0、中途回复」冒充送达。
 
 配套工具：`card_service`（统一出卡，见 `docs/card-service.md`）、`delivery_gate`（只读取事实）、`route_policy`（出结论）、`new_window_scan`（新窗检测）。Codex 端的投递约束见 `docs/codex-delivery.md`。
+
+**部署时必做**：按 `docs/setup-card-service.md` 装卡片服务、设自启，并把三条接线写进注入层。只放工具不接线，本节规则会退化成口头问人。
