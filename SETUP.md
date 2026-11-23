@@ -6,6 +6,22 @@
 
 ---
 
+## 快速开始（两分钟）
+
+```bash
+git clone https://github.com/nisekoe/multi-ai-collab-kit.git
+cd multi-ai-collab-kit
+
+python run_tests.py                 # 全部离线测试（沙盒根，不碰你的真实档案）
+python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
+```
+
+最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
+
+需要人选窗口时再启动常驻卡片服务：`python card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
+
+---
+
 ## 一、你需要自备的东西
 
 本仓库只提供本地桥接脚本、插件源码、配置模板与治理门禁，以下内容需在你本机自行准备：

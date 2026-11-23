@@ -1,3 +1,5 @@
+import _testenv; _testenv.sandbox()
+
 import os
 # -*- coding: utf-8 -*-
 import sys
@@ -67,24 +69,26 @@ with mock.patch("codex_picker_adapter.read_snapshot", return_value=snap_pct), \
     code, info = picker.commit_codex(cc_pct, "hi", dry_run=True)
     ok(code == wp.EXIT_UNQUALIFIED and info["reason"] == "cwd_drift", "commit_codex raw a%20b vs a b 判不同目录 -> cwd_drift exit6")
 import codex_picker_adapter as cxa
-print("=== fs_path_key 文件系统路径比对（GPT 复审）===")
-ok(cxa.fs_path_key("F:/Proj/X") == cxa.fs_path_key("f:\\proj\\x"), "fs case-insensitive eq")
-ok(cxa.fs_path_key("F:/a/b") == cxa.fs_path_key("F:\\a\\b"), "fs separator eq")
-ok(cxa.fs_path_key("F:/a/") == cxa.fs_path_key("F:/a"), "fs trailing sep eq")
-ok(cxa.fs_path_key("F:/a/./b") == cxa.fs_path_key("F:/a/b"), "fs dot resolve eq")
-ok(cxa.fs_path_key("F:/a  b") != cxa.fs_path_key("F:/a b"), "fs internal whitespace count distinct (不同目录)")
-ok(cxa.fs_path_key("F:/a b") != cxa.fs_path_key("F:/a c"), "fs cross-entry path change distinct")
-ok(cxa.fs_path_key("F:/a%20b") != cxa.fs_path_key("F:/a b"), "fs raw percent literal distinct (a%20b 非 a b)")
-ok(cxa.fs_path_key("file:///F:/a%20b") == cxa.fs_path_key("F:/a b"), "fs file:// URI decode eq")
-ok(not cxa.default_workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y"), "shared policy blocks protected workspace")
-ok(picker._workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y") == cxa.default_workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y"), "picker 与 adapter 共享同一工作区授权")
-code, info = picker.dispatch(wp.UnifiedCandidate(leg="harbor", hostId="h", id="s1"), "hi", dry_run=True)
-ok(info["leg"] == "harbor" and "--session" in info["route"], "harbor routes to reach_dsh --session")
-with mock.patch("porta_adapter.PortaAdapter.deliver", return_value=(0, {"ok": True, "dry_run": True})) as md:
-    code, info = picker.dispatch(cp, "hi", peer_agent="desktop_bot", dry_run=True)
-    ok(code == 0 and md.call_args.args[0] == "conv1", "porta dispatch calls adapter.deliver(conv_id)")
-    ok(md.call_args.kwargs.get("dry_run") is True, "porta dry_run forwarded")
-code, info = picker.dispatch(wp.UnifiedCandidate(leg="mars", hostId="h", id="x"), "hi")
-ok(code == wp.EXIT_ENV and info["reason"] == "unknown_leg", "unknown leg -> env error")
 
-print("\n全过：%d 项断言" % n)
+if __name__ == "__main__":
+    print("=== fs_path_key 文件系统路径比对（GPT 复审）===")
+    ok(cxa.fs_path_key("F:/Proj/X") == cxa.fs_path_key("f:\\proj\\x"), "fs case-insensitive eq")
+    ok(cxa.fs_path_key("F:/a/b") == cxa.fs_path_key("F:\\a\\b"), "fs separator eq")
+    ok(cxa.fs_path_key("F:/a/") == cxa.fs_path_key("F:/a"), "fs trailing sep eq")
+    ok(cxa.fs_path_key("F:/a/./b") == cxa.fs_path_key("F:/a/b"), "fs dot resolve eq")
+    ok(cxa.fs_path_key("F:/a  b") != cxa.fs_path_key("F:/a b"), "fs internal whitespace count distinct (不同目录)")
+    ok(cxa.fs_path_key("F:/a b") != cxa.fs_path_key("F:/a c"), "fs cross-entry path change distinct")
+    ok(cxa.fs_path_key("F:/a%20b") != cxa.fs_path_key("F:/a b"), "fs raw percent literal distinct (a%20b 非 a b)")
+    ok(cxa.fs_path_key("file:///F:/a%20b") == cxa.fs_path_key("F:/a b"), "fs file:// URI decode eq")
+    ok(not cxa.default_workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y"), "shared policy blocks protected workspace")
+    ok(picker._workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y") == cxa.default_workspace_allowed(("codex", "local", "t1"), "X:/protected-workspace/y"), "picker 与 adapter 共享同一工作区授权")
+    code, info = picker.dispatch(wp.UnifiedCandidate(leg="harbor", hostId="h", id="s1"), "hi", dry_run=True)
+    ok(info["leg"] == "harbor" and "--session" in info["route"], "harbor routes to reach_dsh --session")
+    with mock.patch("porta_adapter.PortaAdapter.deliver", return_value=(0, {"ok": True, "dry_run": True})) as md:
+        code, info = picker.dispatch(cp, "hi", peer_agent="desktop_bot", dry_run=True)
+        ok(code == 0 and md.call_args.args[0] == "conv1", "porta dispatch calls adapter.deliver(conv_id)")
+        ok(md.call_args.kwargs.get("dry_run") is True, "porta dry_run forwarded")
+    code, info = picker.dispatch(wp.UnifiedCandidate(leg="mars", hostId="h", id="x"), "hi")
+    ok(code == wp.EXIT_ENV and info["reason"] == "unknown_leg", "unknown leg -> env error")
+
+    print("\n全过：%d 项断言" % n)

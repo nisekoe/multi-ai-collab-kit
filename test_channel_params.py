@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """互通参数"唯一正本 + 调用时现读 + 动态参数自动解析"的用例（2026-11-12 14:5x）。
 
@@ -113,83 +114,85 @@ except ValueError as exc:
 
 # ---- D. sessionId 不用人给 ----
 import inspect
-sig = inspect.signature(CP.resolve_desktop_session)
-must = [p for p in sig.parameters.values() if p.default is inspect.Parameter.empty]
-check("D1 resolve_desktop_session 不需要人传 sessionId", len(must) == 0,
-      [p.name for p in must])
 
-# ---- E. 归档闸与绑定失效降级（2026-11-23）----
-HOME = os.path.join(TMP, "dsh_home")
-os.makedirs(os.path.join(HOME, "storages"), exist_ok=True)
-BOUND = "session-bound-archived"
-OLD = "session-old-archived"
-NEW = "session-new-live"
-OTHER = "session-other-live"
-with open(os.path.join(HOME, "storages", "workspace.json"), "w", encoding="utf-8", newline="\n") as f:
-    json.dump({"global": {"archivedSessionIds": [BOUND, OLD]}}, f, ensure_ascii=False)
+if __name__ == "__main__":
+    sig = inspect.signature(CP.resolve_desktop_session)
+    must = [p for p in sig.parameters.values() if p.default is inspect.Parameter.empty]
+    check("D1 resolve_desktop_session 不需要人传 sessionId", len(must) == 0,
+          [p.name for p in must])
 
-os.environ["DSH_HOME"] = HOME
-os.environ["DSH_SESSION_ID"] = "session-test-self"
+    # ---- E. 归档闸与绑定失效降级（2026-11-23）----
+    HOME = os.path.join(TMP, "dsh_home")
+    os.makedirs(os.path.join(HOME, "storages"), exist_ok=True)
+    BOUND = "session-bound-archived"
+    OLD = "session-old-archived"
+    NEW = "session-new-live"
+    OTHER = "session-other-live"
+    with open(os.path.join(HOME, "storages", "workspace.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"global": {"archivedSessionIds": [BOUND, OLD]}}, f, ensure_ascii=False)
 
-cfg5 = json.loads(json.dumps(BASE_CFG))
-cfg5["desktop_bot"]["bound_session"] = {"sessionId": BOUND, "bound_at": "2026-11-22 22:50"}
-write_channel(cfg5)
+    os.environ["DSH_HOME"] = HOME
+    os.environ["DSH_SESSION_ID"] = "session-test-self"
 
-CP.refresh_identity = lambda force=False: {"ok": True}
-SCEN = {"mode": "unique"}
+    cfg5 = json.loads(json.dumps(BASE_CFG))
+    cfg5["desktop_bot"]["bound_session"] = {"sessionId": BOUND, "bound_at": "2026-11-22 22:50"}
+    write_channel(cfg5)
 
-
-def _fake_get_soft(url, token, timeout=15.0):
-    if "/candidates" in url:
-        m = SCEN["mode"]
-        if m == "unique":
-            return 200, {"ok": True, "role": "desktop",
-                         "session": {"sessionId": NEW, "cwd": "C:/x/default-workspace"},
-                         "candidates": 1, "basis": ["live=1"]}
-        if m == "amb4":
-            return 409, {"ok": False, "error": "ambiguous",
-                         "candidates": [{"sessionId": NEW, "createdAt": "t"},
-                                        {"sessionId": OTHER, "createdAt": "t"},
-                                        {"sessionId": BOUND, "createdAt": "t"},
-                                        {"sessionId": OLD, "createdAt": "t"}]}
-        if m == "amb3":
-            return 409, {"ok": False, "error": "ambiguous",
-                         "candidates": [{"sessionId": NEW, "createdAt": "t"},
-                                        {"sessionId": BOUND, "createdAt": "t"},
-                                        {"sessionId": OLD, "createdAt": "t"}]}
-        if m == "zero":
-            return 404, {"ok": False, "error": "no_target", "seen": []}
-    return 200, {"ok": True}
+    CP.refresh_identity = lambda force=False: {"ok": True}
+    SCEN = {"mode": "unique"}
 
 
-CP._get_soft = _fake_get_soft
+    def _fake_get_soft(url, token, timeout=15.0):
+        if "/candidates" in url:
+            m = SCEN["mode"]
+            if m == "unique":
+                return 200, {"ok": True, "role": "desktop",
+                             "session": {"sessionId": NEW, "cwd": "C:/x/default-workspace"},
+                             "candidates": 1, "basis": ["live=1"]}
+            if m == "amb4":
+                return 409, {"ok": False, "error": "ambiguous",
+                             "candidates": [{"sessionId": NEW, "createdAt": "t"},
+                                            {"sessionId": OTHER, "createdAt": "t"},
+                                            {"sessionId": BOUND, "createdAt": "t"},
+                                            {"sessionId": OLD, "createdAt": "t"}]}
+            if m == "amb3":
+                return 409, {"ok": False, "error": "ambiguous",
+                             "candidates": [{"sessionId": NEW, "createdAt": "t"},
+                                            {"sessionId": BOUND, "createdAt": "t"},
+                                            {"sessionId": OLD, "createdAt": "t"}]}
+            if m == "zero":
+                return 404, {"ok": False, "error": "no_target", "seen": []}
+        return 200, {"ok": True}
 
-check("E1 archived_session_ids 读合成归档清单",
-      CP.archived_session_ids() == {BOUND, OLD}, CP.archived_session_ids())
-r_arch = CP.verify_target(BOUND, "desktop")
-check("E2 verify_target 对已归档会话直接拒投 target_archived",
-      r_arch.get("ok") is False and r_arch.get("error") == "target_archived", r_arch)
-SCEN["mode"] = "unique"
-r_u = CP.resolve_desktop_session()
-check("E3 绑定窗已归档 + 唯一活候选且 cwd 相符 -> 智能自动切换",
-      r_u.get("ok") is True and r_u.get("sessionId") == NEW
-      and "auto_switch_after_binding_invalid" in (r_u.get("basis") or []), r_u)
-SCEN["mode"] = "amb4"
-r_a4 = CP.resolve_desktop_session()
-cands4 = [c["sessionId"] for c in (r_a4.get("candidates") or [])]
-check("E4 多活候选 -> 剔除归档后剩 2 个报 needs_confirm",
-      r_a4.get("ok") is False and r_a4.get("error") == "binding_invalid"
-      and r_a4.get("needs_confirm") is True and cands4 == [NEW, OTHER], r_a4)
-SCEN["mode"] = "amb3"
-r_a3 = CP.resolve_desktop_session()
-check("E5 候选剔除归档后只剩 1 个 -> 自动切换",
-      r_a3.get("ok") is True and r_a3.get("sessionId") == NEW, r_a3)
-SCEN["mode"] = "zero"
-r_z = CP.resolve_desktop_session()
-check("E6 剔除归档后零活候选 -> needs_confirm 空列表",
-      r_z.get("ok") is False and r_z.get("error") == "binding_invalid"
-      and r_z.get("needs_confirm") is True and not (r_z.get("candidates") or []), r_z)
 
-print()
-print("FAILED:", fails or "none")
-sys.exit(1 if fails else 0)
+    CP._get_soft = _fake_get_soft
+
+    check("E1 archived_session_ids 读合成归档清单",
+          CP.archived_session_ids() == {BOUND, OLD}, CP.archived_session_ids())
+    r_arch = CP.verify_target(BOUND, "desktop")
+    check("E2 verify_target 对已归档会话直接拒投 target_archived",
+          r_arch.get("ok") is False and r_arch.get("error") == "target_archived", r_arch)
+    SCEN["mode"] = "unique"
+    r_u = CP.resolve_desktop_session()
+    check("E3 绑定窗已归档 + 唯一活候选且 cwd 相符 -> 智能自动切换",
+          r_u.get("ok") is True and r_u.get("sessionId") == NEW
+          and "auto_switch_after_binding_invalid" in (r_u.get("basis") or []), r_u)
+    SCEN["mode"] = "amb4"
+    r_a4 = CP.resolve_desktop_session()
+    cands4 = [c["sessionId"] for c in (r_a4.get("candidates") or [])]
+    check("E4 多活候选 -> 剔除归档后剩 2 个报 needs_confirm",
+          r_a4.get("ok") is False and r_a4.get("error") == "binding_invalid"
+          and r_a4.get("needs_confirm") is True and cands4 == [NEW, OTHER], r_a4)
+    SCEN["mode"] = "amb3"
+    r_a3 = CP.resolve_desktop_session()
+    check("E5 候选剔除归档后只剩 1 个 -> 自动切换",
+          r_a3.get("ok") is True and r_a3.get("sessionId") == NEW, r_a3)
+    SCEN["mode"] = "zero"
+    r_z = CP.resolve_desktop_session()
+    check("E6 剔除归档后零活候选 -> needs_confirm 空列表",
+          r_z.get("ok") is False and r_z.get("error") == "binding_invalid"
+          and r_z.get("needs_confirm") is True and not (r_z.get("candidates") or []), r_z)
+
+    print()
+    print("FAILED:", fails or "none")
+    sys.exit(1 if fails else 0)

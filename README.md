@@ -16,6 +16,24 @@
 - **部署**：卡片服务要常驻并接线到规则，步骤见 `docs/setup-card-service.md`；不接线，规则会退化回口头问。
 - **投递闸与回程地址**：每条消息自带发起方地址；对方按地址回；同一任务选定即记住；出现新窗口才重新确认；送达分 refused／queued／consumed 三态。规则在 `GOVERNANCE.md` 第五层，Codex 端约束见 `docs/codex-delivery.md`。
 
+工具入口：`run_tests.py`（离线测试）、`init_hub.py`（一键建库）、`card_service.py`（选窗卡片）、`guard.py`（退路门）；扩展阅读：`docs/hooks.md`（客户端 Hook 门禁）、`docs/throttle.md`（跨窗节流）。
+
+## 快速开始（两分钟）
+
+```bash
+git clone https://github.com/nisekoe/multi-ai-collab-kit.git
+cd multi-ai-collab-kit
+
+python run_tests.py                 # 全部离线测试（沙盒根，不碰你的真实档案）
+python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
+```
+
+最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
+
+需要人选窗口时再启动常驻卡片服务：`python card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
+
+---
+
 ## 一、系统局限性与免责声明（四项边界）
 
 在正式体验本工具前，请从客观与严谨的角度明确以下四项边界条件：

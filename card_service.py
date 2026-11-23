@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 CARD_DIR = Path(os.environ.get("CARD_DIR") or r"F:\hub\_state\cards")
+IS_WINDOWS = os.name == "nt"
 HOST, PORT = "127.0.0.1", 8790
 _inbox: "queue.Queue[dict]" = queue.Queue()
 
@@ -44,6 +45,8 @@ MAX_PER_GROUP = 10
 
 
 def _dpi_aware() -> None:
+    if not IS_WINDOWS:
+        return
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
     except Exception:
@@ -98,6 +101,8 @@ def _flat(groups: list[dict]) -> list[dict]:
 
 
 def _soft_shadow(hwnd: int) -> None:
+    if not IS_WINDOWS:
+        return
     """给无边框窗口加一层系统投影（CS_DROPSHADOW），看起来不那么硬。"""
     try:
         GCL_STYLE, CS_DROPSHADOW = -26, 0x00020000

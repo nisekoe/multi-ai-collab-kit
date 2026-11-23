@@ -1,8 +1,11 @@
+import _testenv; _testenv.sandbox()
+
 import os
 # -*- coding: utf-8 -*-
 """集成验收：选中地址＋工作区授权流到实际发送入口 reach_gpt（只读 dry-run，零真投零额度）。"""
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import picker, window_picker as wp
 
 print("=== 选中地址 → 发送入口 授权链集成验收（dry-run）===")
@@ -31,12 +34,17 @@ else:
 
 # TOCTOU：选窗时工作区作为 --expected-cwd 传发送入口最终复验（GPT 复审：父进程预检后到读库间漂移）
 import subprocess
-reach = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reach_gpt.py")
-if normal:
-    nid = normal[0].id
-    p = subprocess.run([sys.executable, reach, "--thread", nid, "--text", "t", "--expected-cwd", "F:/wrong/path", "--dry-run"], capture_output=True, text=True, encoding="utf-8", timeout=120)
-    print("TOCTOU 错 expected-cwd 发送入口：exit=%d（应6 漂移）" % p.returncode)
-    assert p.returncode == 6, "选窗时工作区不符发送入口应拒"
-    assert "工作区已变更" in (p.stdout + p.stderr)
 
-print("=== 集成验收 PASS：选中地址＋共享工作区授权＋选窗时 cwd 最终复验确实流到实际发送入口 ===")
+if __name__ == "__main__":
+    if os.environ.get("MACK_HOST_TESTS") != "1":
+        print("skip：依赖宿主机状态，设 MACK_HOST_TESTS=1 再跑")
+        sys.exit(0)
+    reach = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reach_gpt.py")
+    if normal:
+        nid = normal[0].id
+        p = subprocess.run([sys.executable, reach, "--thread", nid, "--text", "t", "--expected-cwd", "F:/wrong/path", "--dry-run"], capture_output=True, text=True, encoding="utf-8", timeout=120)
+        print("TOCTOU 错 expected-cwd 发送入口：exit=%d（应6 漂移）" % p.returncode)
+        assert p.returncode == 6, "选窗时工作区不符发送入口应拒"
+        assert "工作区已变更" in (p.stdout + p.stderr)
+
+    print("=== 集成验收 PASS：选中地址＋共享工作区授权＋选窗时 cwd 最终复验确实流到实际发送入口 ===")

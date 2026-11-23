@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -46,7 +47,7 @@ import time
 
 PROJECT = os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOLS = os.path.join(PROJECT, "tools")
-GIT = r"C:\Program Files\Git\cmd\git.exe"
+GIT = shutil.which("git") or (r"C:\Program Files\Git\cmd\git.exe" if os.path.exists(r"C:\Program Files\Git\cmd\git.exe") else "git")
 
 import archive_paths  # noqa: E402
 _WM = archive_paths.write_mode()
