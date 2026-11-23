@@ -153,6 +153,33 @@ def wrap_origin_idempotent(text: str, peer_agent: str) -> str:
     return origin_line(peer) + ("\n" + body if body else "")
 
 
+def binding_verdict(binding: str, chosen: str, rows: list) -> dict:
+    """投前现查：绑定是不是已经被更新的会话取代。
+
+    rows: [{"id": str, "last": str}]，按 last 倒序排好（新的在前）。
+    - 选的是最新一条：放行；
+    - 没有绑定：拒（不能自己挑）；
+    - 选的是旧绑定、且它是最新：放行；
+    - 选的是旧绑定、但已有更新的：拒（new_window_needs_confirm）；
+    - 既不是绑定也不是最新：拒（chosen_not_bound）。
+    """
+    if not rows:
+        return {"ok": True, "reason": "no_rows"}
+    newest = rows[0]
+    if chosen.startswith(newest["id"][:8]):
+        return {"ok": True, "reason": "chosen_newest"}
+    if not binding:
+        return {"ok": False, "reason": "no_binding_need_confirm", "newer": newest}
+    idx = next((i for i, r in enumerate(rows) if r["id"].startswith(binding[:8])), None)
+    if idx is None:
+        return {"ok": False, "reason": "binding_missing", "newer": newest}
+    if not (chosen.startswith(binding[:8]) or binding.startswith(chosen[:8])):
+        return {"ok": False, "reason": "chosen_not_bound", "newer": newest}
+    if idx == 0:
+        return {"ok": True, "reason": "bound_target_no_newer"}
+    return {"ok": False, "reason": "new_window_needs_confirm", "newer": newest}
+
+
 def extract_body_fingerprint(wrapped_text: str, max_len: int = 0) -> str:
     """跳过固定 ORIGIN 首行与信封〔〕头，提取真实正文指纹（修「69字头吃掉前40字」老坑）。"""
     lines = (wrapped_text or "").replace("\r\n", "\n").split("\n")
@@ -1053,6 +1080,8 @@ class PortaAdapter:
         expected_host: Optional[str] = None,
         expected_role: Optional[str] = None,
         expected_cwd: Optional[str] = None,
+        binding: Optional[str] = None,
+        from_addr: Optional[str] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """投递前二次 verify_target → 强制 ORIGIN 幂等＋clientMessageId → 投后 /steps?tail= 真核验。
         expected_host/role/cwd＝选中键完整地址（GPT桥复审#2）：在真正用于 POST 的这次快照上终验，dry-run 同闸。"""
@@ -1063,6 +1092,22 @@ class PortaAdapter:
 
         # 投前二次复验（防选完卡片犹豫期间窗变 RUNNING/关闭/归档）；同一份枚举既供复验也供 POST（GPT桥复审#2）
         er = self.enumerate()
+
+        # 投前现查绑定：有新窗口出现时不许默认继续投旧窗（腐竹 2026-11-24 口径）
+        _binding = (binding if binding is not None else os.environ.get("PORTA_BINDING", "")).strip()
+        if not dry_run:
+            try:
+                rows = [{"id": c.id, "last": c.lastActivity or ""} for c in (er.candidates or [])]
+                rows.sort(key=lambda r: r["last"], reverse=True)
+                chk = binding_verdict(_binding, conv_id, rows)
+                if not chk.get("ok"):
+                    return EXIT_TARGET_INVALID, {"ok": False, "code": EXIT_TARGET_INVALID,
+                                                 "stage": "binding_check", "reason": chk.get("reason"),
+                                                 "newer": chk.get("newer"), "convId": conv_id,
+                                                 "leg": self.LEG, "at": _iso_stamp(self._now())}
+            except Exception:
+                pass
+
         vr = self.verify_target(
             conv_id,
             er,
@@ -1109,7 +1154,18 @@ class PortaAdapter:
                 return EXIT_TARGET_INVALID, {"ok": False, "code": EXIT_TARGET_INVALID, "stage": "final_reverify",
                                               "reason": "cwd_drift", "detail": "POST前快照工作区已漂移", "leg": self.LEG,
                                               "convId": conv_id, "at": _iso_stamp(self._now())}
-        wrapped = wrap_origin_idempotent(text, peer_agent)
+        _addr = (from_addr if from_addr is not None else os.environ.get("KIT_FROM_ADDR", "")).strip()
+        _text = text
+        if _addr:
+            try:
+                import msg_envelope as _ME
+                _env = _ME.new_envelope(from_addr=_addr,
+                                        to_addr=_ME.addr("porta", "local", conv_id),
+                                        peer_agent=peer_agent)
+                _text = _ME.wrap(text, _env)
+            except Exception:
+                _text = text
+        wrapped = wrap_origin_idempotent(_text, peer_agent)
         body_fp = extract_body_fingerprint(wrapped)
         cid = new_client_message_id()
         pre_step = int(cand.meta.get("stepCount") or 0)
