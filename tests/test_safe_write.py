@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    SPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "safe_write.py")
+    SPEC = os.path.join(_TOOLS, "safe_write.py")
     spec = importlib.util.spec_from_file_location("safe_write_under_test", SPEC)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

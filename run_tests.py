@@ -36,6 +36,23 @@ def main() -> int:
     print("沙盒档案根：", root)
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", os.path.join(HERE, "tests"), "-p", "test_*.py"]
     rc = subprocess.call(cmd, cwd=HERE, env=env)
+    if rc == 0:
+        for name in (
+            "test_paths.py",
+            "test_safe_write.py",
+            "test_msg_envelope.py",
+            "test_delivery_receipt.py",
+            "test_channel_params.py",
+            "test_picker.py",
+            "test_grouped_card.py",
+            "test_window_picker.py",
+        ):
+            script = Path(HERE) / "tests" / name
+            if script.is_file():
+                print(f"\n--- 运行独立脚本测试：{name} ---")
+                rc = subprocess.call([sys.executable, str(script)], cwd=HERE, env=env)
+                if rc:
+                    break
     if rc == 0 and os.environ.get("MACK_HOST_TESTS") == "1":
         for script in sorted((Path(HERE) / "tests").glob("hostcheck_*.py")):
             rc = subprocess.call([sys.executable, str(script)], cwd=HERE, env=env)

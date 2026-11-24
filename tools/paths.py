@@ -161,6 +161,51 @@ def resolve(rel: str, cli_root=None, cwd=None, for_write=False) -> Path:
     return target
 
 
+def _has_configured_root(cli_root=None, cwd=None, for_write: bool = False) -> bool:
+    if cli_root or os.environ.get("ARCHIVE_ROOT") or user_pointer().is_file():
+        return True
+    if not for_write and _find_up_sentinel(Path(cwd or os.getcwd())) is not None:
+        return True
+    return False
+
+
+def state_path(rel: str, cli_root=None, cwd=None, for_write: bool = False) -> Path:
+    """解析运行态文件路径（_state/<rel>）。
+
+    若显式指定了 cli_root / ARCHIVE_ROOT、存在本机指针文件（含空指针），或读模式下当前目录向上存在哨兵，
+    则严格执行寻根与哨兵校验（失败即抛 RootError，绝不静默回退）；
+    仅在完全未配置任何工作根时回退到 ~/.multi-ai-collab-kit/_state/<rel>。
+    """
+    if _has_configured_root(cli_root, cwd=cwd, for_write=for_write):
+        return resolve(f"_state/{rel}", cli_root=cli_root, cwd=cwd, for_write=for_write)
+    try:
+        return resolve(f"_state/{rel}", cli_root=cli_root, cwd=cwd, for_write=for_write)
+    except RootError:
+        return Path.home() / ".multi-ai-collab-kit" / "_state" / rel.replace("/", os.sep)
+
+
+def cache_path(rel: str, cli_root=None, cwd=None) -> Path:
+    """解析本机缓存文件路径（_local/cache/<rel>）；已配置工作根或存在哨兵时严格校验，未初始化时回退到 ~/.multi-ai-collab-kit/cache/<rel>。"""
+    if _has_configured_root(cli_root, cwd=cwd, for_write=False):
+        return resolve(f"_local/cache/{rel}", cli_root=cli_root, cwd=cwd, for_write=False)
+    try:
+        return resolve(f"_local/cache/{rel}", cli_root=cli_root, cwd=cwd, for_write=False)
+    except RootError:
+        return Path.home() / ".multi-ai-collab-kit" / "cache" / rel.replace("/", os.sep)
+
+
+def codex_registry_path(cli_root=None, cwd=None, for_write: bool = True) -> Path:
+    """解析 Codex 会话登记册路径：优先 _state/codex_sessions.json，兼容旧版 _state/window_registry/GPT桌面端会话登记.json 与 _state/GPT桌面端会话登记.json。"""
+    primary = state_path("codex_sessions.json", cli_root=cli_root, cwd=cwd, for_write=for_write)
+    if primary.exists():
+        return primary
+    for legacy_rel in ("window_registry/GPT桌面端会话登记.json", "GPT桌面端会话登记.json"):
+        legacy = state_path(legacy_rel, cli_root=cli_root, cwd=cwd, for_write=for_write)
+        if legacy.exists():
+            return legacy
+    return primary
+
+
 def _write_pointer(root: Path, archive_id: str) -> Path:
     ptr = user_pointer()
     ptr.parent.mkdir(parents=True, exist_ok=True)
@@ -178,9 +223,7 @@ def set_pointer(root_str: str) -> Path:
     root = Path(root_str).expanduser().absolute()
     data = _read_sentinel(root)
     _validate(root, data)
-    pointer = _write_pointer(root, data["archive_id"])
-    pointer.with_name("write_mode.txt").write_text("hub\n", encoding="utf-8", newline="\n")
-    return pointer
+    return _write_pointer(root, data["archive_id"])
 
 
 def main(argv=None) -> int:

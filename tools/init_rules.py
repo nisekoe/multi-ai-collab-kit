@@ -58,7 +58,12 @@ def install(target: str, body: str, digest: str) -> int:
     text = Path(target).read_text(encoding="utf-8") if os.path.exists(target) else ""
     span = find_block(text)
     if span:
-        new = text[:span[0]] + block + text[span[1]:]
+        tail = text[span[1]:]
+        if tail.startswith("\r\n"):
+            tail = tail[2:]
+        elif tail.startswith("\n"):
+            tail = tail[1:]
+        new = text[:span[0]] + block + tail
     else:
         new = (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
     Path(target).write_text(new, encoding="utf-8", newline="\n")

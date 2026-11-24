@@ -48,25 +48,20 @@ except Exception:  # noqa: BLE001
     pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import archive_paths as ap
+import paths
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-_OLD_CHANNEL = os.path.join(PROJECT, "档案库", "工作台", "通道.json")
-try:
-    _HUB_CHANNEL = os.path.join(str(ap.paths.resolve_root(for_write=False)[0]), "_state", "通道.json")
-except ap.paths.RootError:
-    _HUB_CHANNEL = ""
-CHANNEL = os.environ.get("DSH_CHANNEL_FILE") or (_HUB_CHANNEL or _OLD_CHANNEL)
+CHANNEL = os.environ.get("DSH_CHANNEL_FILE") or str(paths.state_path("通道.json", for_write=False))
 
 # 来件台账：插件受理投递时写的一行 JSONL（{at,to,from,fromRole,requestId,mode}）。
-# 回话时先用它找回"这条消息是谁从哪个窗口发来的"，再按 R1 复验那个窗口。
-INBOUND_LEDGER = os.environ.get("DSH_INBOUND_LEDGER") or str(ap.resolve("工作台/_tmp_/来件关联.jsonl", for_write=True))
+# 回话时先用它找回"这条消息是谁从哪个窗口发来的"，再复验那个窗口。
+INBOUND_LEDGER = os.environ.get("DSH_INBOUND_LEDGER") or str(paths.state_path("来件关联.jsonl", for_write=True))
 ORIGIN_TTL_MINUTES = 30
 
 
 def _fill_tokens(cfg: dict) -> dict:
     """口令库外：正本只留 token_secret 指针，现读 secrets_dir 合并（不缓存）。"""
-    sec = ap.paths.secrets_dir()
+    sec = paths.secrets_dir()
     for name, defkey in (("feishu_bot", "harbor_feishu"), ("desktop_bot", "harbor_desktop")):
         s = cfg.get(name) or {}
         if not s.get("token"):

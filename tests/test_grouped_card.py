@@ -88,25 +88,28 @@ if __name__ == "__main__":
     card3 = wp.build_card_grouped(cs, scroll_cap=2)
     assert card3.get("grouped") is False, "over cap fallback"
     assert len(card3["questions"]) == 1
-    # ── 活体结构冒烟：不依赖特定标题，只核 schema 与动态排除不变量 ──
-    ca = picker.card_grouped()
-    assert isinstance(ca.get("total"), int) and "questions" in ca
-    assert all(q.get("id") and q.get("question") and isinstance(q.get("options"), list) for q in ca["questions"])
-    if ca["total"] <= 60:
-        assert ca.get("grouped") is True
-    live = picker.gather()
-    # 按候选键逐行核（不用标题集合：同名窗一条归档一条可投会假阳性）
-    for r in ca.get("rows", []):
-        ok, reason = wp.verify_target(r["candidate"], allow_protected=False)
-        assert ok, "活体卡行必须合格: %s (%s)" % (reason, r["candidate"].key)
-    # 路 B 分页兜底无 rows 时，按标签解析回候选再核
-    if not ca.get("rows"):
-        for q in ca["questions"]:
-            for o in q["options"]:
-                if o["label"] in (wp.NAV_NEXT, wp.NAV_KEYWORD, wp.NAV_CANCEL):
-                    continue
-                act, cnd = wp.resolve_selection(ca, o["label"])
-                assert act == "ok" and cnd is not None
-                ok, reason = wp.verify_target(cnd, allow_protected=False)
-                assert ok, "活体卡行必须合格: %s" % reason
-    print("GROUPED MQ CARD ASSERTIONS ALL PASS (fixture + live structural smoke)")
+    if _os.environ.get("MACK_HOST_TESTS") == "1":
+        # ── 活体结构冒烟（仅 MACK_HOST_TESTS=1 时启用）：核 schema 与动态排除不变量 ──
+        ca = picker.card_grouped()
+        assert isinstance(ca.get("total"), int) and "questions" in ca
+        assert all(q.get("id") and q.get("question") and isinstance(q.get("options"), list) for q in ca["questions"])
+        if ca["total"] <= 60:
+            assert ca.get("grouped") is True
+        live = picker.gather()
+        # 按候选键逐行核（不用标题集合：同名窗一条归档一条可投会假阳性）
+        for r in ca.get("rows", []):
+            ok, reason = wp.verify_target(r["candidate"], allow_protected=False)
+            assert ok, "活体卡行必须合格: %s (%s)" % (reason, r["candidate"].key)
+        # 路 B 分页兜底无 rows 时，按标签解析回候选再核
+        if not ca.get("rows"):
+            for q in ca["questions"]:
+                for o in q["options"]:
+                    if o["label"] in (wp.NAV_NEXT, wp.NAV_KEYWORD, wp.NAV_CANCEL):
+                        continue
+                    act, cnd = wp.resolve_selection(ca, o["label"])
+                    assert act == "ok" and cnd is not None
+                    ok, reason = wp.verify_target(cnd, allow_protected=False)
+                    assert ok, "活体卡行必须合格: %s" % reason
+        print("GROUPED MQ CARD ASSERTIONS ALL PASS (fixture + live structural smoke)")
+    else:
+        print("GROUPED MQ CARD ASSERTIONS ALL PASS (fixture offline)")

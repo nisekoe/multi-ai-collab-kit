@@ -114,7 +114,7 @@ def main(argv=None) -> int:
         m = CP.desktop_bot()
     except Exception as exc:  # noqa: BLE001
         print("读不到通道正本（或通道被 policy 关着）：%s" % exc)
-        print("  正本：工作台\\通道.json；自检：python tools\\channel_params.py")
+        print("  正本：_state\\通道.json；自检：python tools\\channel_params.py")
         return 2
 
     got = CP.resolve_desktop_session(m, explicit=(args.session_id or "").strip())
@@ -129,7 +129,7 @@ def main(argv=None) -> int:
             return 4
         if err == "harbor_not_loaded":
             print("港湾插件没加载：%s" % (detail or "/api/harbor/target 404"))
-            print("  重启 DSH 让它加载；加载后先跑 python tools\\channel_check.py 确认。")
+            print("  重启 DSH 让它加载；加载后先跑 python tools\\channel_params.py --live 确认。")
             record(dict(base, stage="resolve", reason=DR.normalize(err),
                                result_known=True))
             return 2

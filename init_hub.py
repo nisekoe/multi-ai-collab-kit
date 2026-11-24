@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""创建六区档案、安装模板并写入本机指针。"""
+"""初始化协作工作根：创建最小运行目录、安装通用模板并写入本机指针。"""
 from __future__ import annotations
 
 import argparse
@@ -16,32 +16,15 @@ else:
     import paths
 
 ZONES = {
-    "config": "00-config",
-    "governance": "10-governance",
-    "projects": "20-projects",
-    "roles": "30-roles",
-    "resources": "40-resources",
-    "archive": "90-archive",
     "state": "_state",
     "local": "_local",
 }
 HERE = Path(__file__).resolve().parent
 TEMPLATES = {
-    "入口.md": "入口.md",
     "AGENTS.md": "AGENTS.md",
     "通道.json": "_state/通道.json",
-    "传球判据.json": "10-governance/守则/传球判据.json",
-    "窗口登记模板.json": "00-config/active_projects.json",
-    "预设登记模板.json": "00-config/预设登记.json",
     "cordis.patch.yml": "cordis.patch.yml",
 }
-STARTER_FILES = (
-    "10-governance/ledger/工作台结果.md",
-    "10-governance/ledger/待处理事项.md",
-    *(f"30-roles/{role}/scratch.md" for role in (
-        "desktop_bot", "feishu_bot", "planner_bot", "review_bot", "coder_bot"
-    )),
-)
 
 
 def create(root: Path, archive_id: str | None, force: bool = False) -> None:
@@ -59,7 +42,7 @@ def create(root: Path, archive_id: str | None, force: bool = False) -> None:
         if archive_id is not None and archive_id != existing_id:
             raise ValueError(f"此根已使用 archive_id={existing_id}")
         if existing.get("structure_version") != "0.4.0":
-            raise ValueError("已有档案结构版本与本工具不兼容")
+            raise ValueError("已有工作根结构版本与本工具不兼容")
         archive_id = existing_id
     else:
         archive_id = archive_id or paths.DEFAULT_ARCHIVE_ID
@@ -72,11 +55,13 @@ def create(root: Path, archive_id: str | None, force: bool = False) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             shutil.copyfile(templates / name, target)
-    for relative in STARTER_FILES:
-        target = root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            target.touch()
+    codex_reg = root / "_state" / "codex_sessions.json"
+    legacy_regs = (
+        root / "_state" / "window_registry" / "GPT桌面端会话登记.json",
+        root / "_state" / "GPT桌面端会话登记.json",
+    )
+    if not codex_reg.exists() and not any(p.exists() for p in legacy_regs):
+        codex_reg.write_text('{"lines": []}\n', encoding="utf-8", newline="\n")
 
     if existing is None:
         sentinel = {"archive_id": archive_id, "structure_version": "0.4.0", "namespaces": ZONES}
@@ -85,22 +70,19 @@ def create(root: Path, archive_id: str | None, force: bool = False) -> None:
 
     pointer = paths.user_pointer()
     if pointer.exists() and paths._pointer_root() != root and not force:
-        print("已有其他档案根的指针，仍使用原指针。换绑时加 --force。")
+        print("已有其他工作根的指针，仍使用原指针。换绑时加 --force。")
     else:
         paths._write_pointer(root, archive_id)
-        mode = pointer.with_name("write_mode.txt")
-        if force or not mode.exists():
-            mode.write_text("hub\n", encoding="utf-8", newline="\n")
 
-    print(f"档案根 {root}（archive_id={archive_id}）")
+    print(f"工作根 {root}（archive_id={archive_id}）")
     print("通道配置", root / TEMPLATES["通道.json"])
     print("本机指针", pointer)
     command = "mack-init-rules" if __package__ else "python tools/init_rules.py"
-    print(f'把规则写入此档案根：{command} --root "{root}"')
+    print(f'把规则写入此工作根：{command} --root "{root}"')
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="初始化六区档案库")
+    parser = argparse.ArgumentParser(description="初始化多 Agent 协作工作根")
     parser.add_argument("root")
     parser.add_argument("--id", help="新档案的 ID，已有档案保留原 ID")
     parser.add_argument("--force", action="store_true", help="切换已有本机指针")

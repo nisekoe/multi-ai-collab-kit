@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "channel": "stable",
   "releasedAt": "2026-11-24",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.3.3.zip",
-      "sha256": "9e299d9ca6339bf853708a01fed2a282f78dad14c2ab72979c921c3190f455fb",
-      "size": 369383
+      "name": "kit-0.4.0.zip",
+      "sha256": "b7fe6f62b45b4af1cce25bc10e17ed6bf506a2749f53a77d5063ee7dad0bc361",
+      "size": 206573
     }
   ],
   "plugins": [],
-  "notes": "补齐模板、初始化与安装，接通选窗、投递闸及四态回执"
+  "notes": "公开包瘦身划界：只保留跨平台选窗投递与确定性安装校验最小核心"
 }

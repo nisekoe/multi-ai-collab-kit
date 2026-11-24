@@ -27,15 +27,19 @@ class InitRulesTest(unittest.TestCase):
 
     def test_install_idempotent(self):
         self.assertEqual(run("--target", self.target).returncode, 0)
+        first = self.read()
         self.assertEqual(run("--target", self.target).returncode, 0)
         text = self.read()
+        self.assertEqual(text, first)
         self.assertEqual(text.count("MACK-RULES:BEGIN"), 1)
         self.assertIn("原有内容保留", text)
 
     def test_check_and_drift(self):
         run("--target", self.target)
         self.assertEqual(run("--target", self.target, "--check").returncode, 0)
-        text = self.read().replace("## 一、档案根", "## 一、档案根（手改）", 1)
+        orig = self.read()
+        text = orig.replace("# 协作规则正本", "# 协作规则正本（手改）", 1)
+        self.assertNotEqual(text, orig)
         with open(self.target, "w", encoding="utf-8") as fh:
             fh.write(text)
         self.assertEqual(run("--target", self.target, "--check").returncode, 3)

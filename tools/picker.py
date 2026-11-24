@@ -15,14 +15,11 @@ import os
 from pathlib import Path
 
 import window_picker as wp
-import archive_paths
+import paths
 
 CORE_FIELDS = [f.name for f in dataclasses.fields(wp.UnifiedCandidate)]
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
-# 批7收尾补漏（2026-11-22 桌面助手）：登记册随写主开关，与 reach_gpt.py REG 完全同调用。
-# GPT 审校§1：for_write=True 走写根解析、无旧库静默回落（决策B：宁报错不遮掩）；
-# 缺册时 enumerate/dispatch/commit_codex 显式失败，不读停更旧册。
-GPT_REG = Path(archive_paths.resolve("外部协作/GPT桌面端/会话登记.json", for_write=True))
+GPT_REG = paths.codex_registry_path(for_write=True)
 
 # 受保护工作区硬隔离（红线）：复用 codex_picker_adapter 单一真相源（与 reach_gpt 提交前同口径）
 LOCAL_HOST_ID = "local"  # 受信任的本机 codex 存储 host；异 host 由 verify_target 判 host_mismatch
@@ -412,7 +409,7 @@ def dispatch_for_slot(*, candidate: wp.UnifiedCandidate, text: str, dry_run: boo
         nonce = str(payload.get("nonce") or "")
         entry = None
         if nonce:
-            receipt_path = archive_paths.resolve("工作台/GPT投递回执.json", for_write=True)
+            receipt_path = paths.state_path("codex_receipt.json", for_write=True)
             try:
                 with open(receipt_path, "r", encoding="utf-8") as fh:
                     rows = _json.load(fh)

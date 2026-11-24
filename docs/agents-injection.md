@@ -1,24 +1,25 @@
-# 安装共享规则
+# 安装与校验共享规则
 
-规则正文在 `rules/core.md`。初始化档案根后，在工具目录执行以下命令。
+规则正本在 `rules/core.md`。初始化工作根后，在工具包目录执行：
 
 ```bash
 python tools/init_rules.py
 python tools/init_rules.py --check
 ```
 
-默认写入绑定档案根的 `AGENTS.md`。指定另一个档案根用 `--root <档案根>`，向实际客户端注入文件写入可用 `--target <文件>`。将该文件配置到客户端工作区或客户端自己的规则入口。
+默认写入当前绑定工作根的 `AGENTS.md`。若要指定其他工作根可用 `--root <路径>`；若要直接写入某个客户端的规则文件，可用 `--target <文件>`。
 
-## 同步变化
+## 更新与防漂移
 
-正本改动后可重跑安装器。需要持续监视时，请把示例路径换成实际文件。
+修改 `rules/core.md` 后，重新运行 `python tools/init_rules.py`（加对应 `--root` 或 `--target`）即可幂等刷新标记段落，再用 `--check` 核对是否一致。
 
-```bash
-python tools/rules_watch.py --watch --target "./my-hub/AGENTS.md"
-```
-
-正本变更会同步。只改目标里的标记块时，监视器会报告漂移。确认要恢复时执行 `python tools/init_rules.py --target "./my-hub/AGENTS.md"`，然后加 `--check` 核验。自己的补充写在标记块外。
+- 请勿手动修改目标文件里的规则标记段落；
+- 你的本地补充说明写在标记段落之外即可，重复同步不会覆盖段落外的内容。
 
 ## 撤销
 
-`python tools/init_rules.py --remove` 移除绑定根规则文件里的标记块。指定过其他目标时带上同一个 `--target`。
+```bash
+python tools/init_rules.py --remove
+```
+
+移除规则文件中的标记段落（指定过 `--target` 时请带上同一参数）。

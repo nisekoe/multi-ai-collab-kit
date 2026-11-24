@@ -71,11 +71,11 @@ def dsh_home() -> str:
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import archive_paths as ap
+import paths
 PROJECT = os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 缓存位置可由 DSH_IDENTITY_CACHE 覆盖——离线测试要指到临时目录，
 # 否则合成数据会污染真实缓存（说明 §6：测试不向实际用户会话注入）。
-CACHE_PATH = os.environ.get("DSH_IDENTITY_CACHE") or (os.path.join(PROJECT, "档案库", "工作台", "_tmp_", "会话身份.json") if ap.write_mode() == "old" else os.path.join(str(ap.paths.resolve_root(for_write=False)[0]), "_local", "cache", "会话身份.json"))
+CACHE_PATH = os.environ.get("DSH_IDENTITY_CACHE") or str(paths.cache_path("会话身份.json"))
 IM_DIR = os.path.join(dsh_home(), "integrations", "dsh-feishu")
 PROFILE_DIR = os.path.join(dsh_home(), "profiles", "desktop")
 

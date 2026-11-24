@@ -13,7 +13,7 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     HERE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     sys.path.insert(0, HERE)
-    spec = importlib.util.spec_from_file_location("dr", os.path.join(HERE, "delivery_receipt.py"))
+    spec = importlib.util.spec_from_file_location("dr", os.path.join(_TOOLS, "delivery_receipt.py"))
     dr = importlib.util.module_from_spec(spec); spec.loader.exec_module(dr)
     fails, cnt = [], [0]
     def ck(n, g, w):

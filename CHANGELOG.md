@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.4.0（2026-11-24）
+
+- **公开包瘦身划界**：移除 18 个非通用脚本（重型档案库治理仪式、槽位实验原型、整机备份还原、后台规则监视器、自制更新器及六区路径映射），以及对应测试、非通用中文模板和 `docs/hooks.md`，只保留面向外部用户的通用最小核心。
+- **极简工作根与安全寻根**：`init_hub.py` 改为只初始化 `_state/`、`_local/`、最小通用模板与空 Codex 登记册（同时兼容已有旧版登记册，重跑不覆盖）；`paths.py` 新增 `state_path()` / `cache_path()` / `codex_registry_path()`，显式根、空指针或损坏哨兵一律严格抛错，绝不静默回退。
+- **Harbor 与 Python 寻根对齐**：`plugins/dsh-plugin-harbor/lib/index.js` 移除旧过渡开关 `write_mode.txt` 依赖，优先读 `ARCHIVE_ROOT`，其次读 `root.txt`。
+- **测试全覆盖与默认离线隔离**：修正 3 个独立脚本源码路径，将全部 8 个独立脚本接入 `run_tests.py`；分组卡片测试的活宿主冒烟收敛至 `MACK_HOST_TESTS=1`，默认运行零触碰宿主 Porta 与 Codex 数据库。
+- **确定性规则同步与文档精简**：修复 `init_rules.py` 重复同步多写换行问题，实现严格字节幂等；同步精简 `README.md`、`GOVERNANCE.md`、`SETUP.md`、`SANITIZATION.md`、`rules/core.md`、`templates/AGENTS.md` 及 `docs/`。
+
 ## 0.3.3（2026-11-24）
 
 - 打包按 Git 的 NUL 分隔清单读取文件名，包含中文模板。发布清单作为 ZIP 外的独立文件，记录实际附件字节数和 SHA-256。
@@ -16,7 +24,7 @@
 - 修复：`reach_gpt.py` 的 `GPT_DIR` 改为环境变量（不再默认指向维护者的旧目录）
 - 修复：`backup_all.py` 遇到本机不存在的来源时跳过而不是拒绝整包；非 Windows／无对应计划任务时不再调 `schtasks`
 - 修复：卡片服务端口可用 `CARD_PORT` 环境变量改；卡片数据目录与文档一致（`~/.multi-ai-collab-kit/cards`）
-- 文档：`docs/gate-coverage.md` 与仓库实际发送层对齐（去掉未随仓库提供的 `delivery_gate` / `route_policy` / `reach_momo` / `push_dsh_ningning` 引用）
+- 文档：`docs/gate-coverage.md` 与仓库实际发送层对齐（去掉未随仓库提供的内部私有脚本引用）
 - 文档：插件安装路径、去重表路径、Codex 受保护工作区示例改为通用说法
 
 ## 0.3.1（2026-11-24）

@@ -110,10 +110,10 @@ CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"
 LOCAL_HOST_ID = "local"  # this standalone bridge uses the local Codex store
 import sys as _ap_sys
 _ap_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import archive_paths  # noqa: E402
+import paths  # noqa: E402
 GPT_DIR = os.environ.get("GPT_DIR", "")  # 可选：你的 GPT 桌面端工作目录；不设就只按登记册匹配
-RECEIPT = str(archive_paths.resolve("工作台/GPT投递回执.json", for_write=True))
-REG = str(archive_paths.resolve("外部协作/GPT桌面端/会话登记.json", for_write=True))  # 登记册随写开关；hub 改名 GPT桌面端会话登记.json
+RECEIPT = str(paths.state_path("codex_receipt.json", for_write=True))
+REG = str(paths.codex_registry_path(for_write=True))
 
 BUSY_WINDOW = picker.BUSY_WINDOW
 SYNC_TIMEOUT = 420          # 秒：codex exec resume 最多等多久

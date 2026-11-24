@@ -40,14 +40,14 @@ import { randomUUID } from 'node:crypto';
 // 而这份代码在普通 node 下要能被离线用例直接加载（否则 dispatch 只能靠重启宿主验）。
 // 它也从没被用到——/say 一直在用 sessionController.prompt 的 content 数组。
 
-// 2026-11-22 批7：运行时路径跟随写主开关（与 tools/session_identity.py、archive_paths 映射一致）。
-// hub 模式落 档案库根 对应区；old 模式或读不到开关回落旧路径。改开关后需重启宿主才生效（加载时读一次）。
+// 运行时路径跟随工作根指针（与 tools/paths.py、tools/session_identity.py 一致）。
 const _OLD_TMP = (process.env.HARBOR_TMP_DIR || '').trim().replace(/\\/g, '/') || (process.cwd().replace(/\\/g, '/') + '/_tmp_');
 const _HUB_ROOT = (() => {
   try {
+    const envRoot = (process.env.ARCHIVE_ROOT || '').trim();
+    if (envRoot) return envRoot.replace(/\\/g, '/');
     const base = process.env.LOCALAPPDATA || ((process.env.USERPROFILE || '') + '/AppData/Local');
     const dir = base + '/agent-archive';
-    if (readFileSync(dir + '/write_mode.txt', 'utf8').trim() !== 'hub') return '';
     return readFileSync(dir + '/root.txt', 'utf8').trim().replace(/\\/g, '/');
   } catch { return ''; }
 })();

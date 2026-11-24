@@ -9,7 +9,7 @@
 做四件事：
 1. 按 git 跟踪清单打包成 kit-<版本>.zip（不把 .git、__pycache__、dist 打进去）；
 2. 算 sha256 与字节数；
-3. 在 ZIP 外生成 kit-manifest.json（字段与 kit_update.py 对齐）；
+3. 在 ZIP 外生成 kit-manifest.json（记录版本、字节数与 SHA-256）；
 4. 打印下一步：建 tag、传 Release、贴清单。
 
 退出码：0 成功；2 参数或环境不对。
@@ -105,7 +105,7 @@ def main(argv=None) -> int:
     print("\n下一步：")
     print("  1) git tag v%s && git push origin v%s" % (a.version, a.version))
     print("  2) 先上传并核对 Release 附件 %s" % zip_path.name)
-    print("  3) 发布与该附件匹配的外置清单（更新器默认读主分支的 kit-manifest.json）")
+    print("  3) 如需公布校验清单，可将外置 kit-manifest.json 随 Release 一并发布")
     return 0
 
 

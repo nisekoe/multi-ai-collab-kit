@@ -12,7 +12,7 @@ import importlib.util, os, sys
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     HERE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location("me", os.path.join(HERE, "msg_envelope.py"))
+    spec = importlib.util.spec_from_file_location("me", os.path.join(_TOOLS, "msg_envelope.py"))
     me = importlib.util.module_from_spec(spec); spec.loader.exec_module(me)
     fails, cnt = [], [0]
     def ck(name, got, want):

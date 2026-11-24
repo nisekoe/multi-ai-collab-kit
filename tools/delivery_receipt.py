@@ -48,13 +48,13 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import safe_write as SW  # noqa: E402
-import archive_paths  # noqa: E402
+import paths  # noqa: E402
 
 KEEP = 200
 
 _DEFAULTS = {
-    "feishu_bot": str(archive_paths.resolve("工作台/飞书助手投递回执.json", for_write=True)),
-    "desktop_bot": str(archive_paths.resolve("工作台/桌面助手投递回执.json", for_write=True)),
+    "feishu_bot": str(paths.state_path("feishu_receipt.json", for_write=True)),
+    "desktop_bot": str(paths.state_path("desktop_receipt.json", for_write=True)),
 }
 _ENV = {"feishu_bot": "FEISHU_REACH_RECEIPT", "desktop_bot": "DESKTOP_REACH_RECEIPT"}
 
