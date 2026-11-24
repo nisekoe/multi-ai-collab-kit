@@ -175,6 +175,24 @@ def accept_incoming(text: str, seen: dict | None = None) -> dict:
     return {"decision": "accept", "reason": "ok", "from": h["from"], "msgId": mid, "bodySha256": d}
 
 
+TIER_RE = re.compile(r"^(?:\[(?:速答|判断|详解)\]|【(?:速答|判断|详解)】)")
+
+
+def ensure_tier_tag(text: str, default_tier: str = "判断") -> tuple[str, bool]:
+    """R09 档位标签校验：检查首个正文内容行是否以 [速答]/[判断]/[详解] 开头，缺失时自动补齐。"""
+    raw = (text or "").replace("\r\n", "\n")
+    lines = raw.split("\n")
+    for idx, line in enumerate(lines):
+        s = line.strip()
+        if not s or ORIGIN_PAT.match(s) or HEADER_PAT.match(s):
+            continue
+        if TIER_RE.match(s):
+            return raw, False
+        lines[idx] = f"[{default_tier}] {s}"
+        return "\n".join(lines), True
+    return raw, False
+
+
 def main() -> int:
     import argparse
     import json

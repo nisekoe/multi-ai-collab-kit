@@ -780,6 +780,64 @@ export function apply(ctx, config = {}) {
       return true;
     }
 
+    // 新建桌面会话（2026-11-24：供选窗卡片一键新建窗口，避免只能拉前台手动建窗）
+    if (path === '/api/harbor/new-session') {
+      if (req.method !== 'POST') {
+        json(res, 405, { ok: false, error: 'use POST' });
+        return true;
+      }
+      if (!authorized(req)) {
+        json(res, 401, { ok: false, error: 'unauthorized' });
+        return true;
+      }
+      let body;
+      try {
+        body = await readBody(req);
+      } catch (error) {
+        json(res, 400, { ok: false, error: String(error && error.message ? error.message : error) });
+        return true;
+      }
+      const ctrl = ctx.sessionController;
+      if (!ctrl || typeof ctrl.create !== 'function') {
+        json(res, 501, { ok: false, error: 'session_create_unavailable',
+          detail: '宿主 sessionController.create 不可用' });
+        return true;
+      }
+      const createReq = {};
+      if (typeof body.workspaceId === 'string' && body.workspaceId.trim()) {
+        createReq.workspaceId = body.workspaceId.trim();
+      } else if (typeof body.cwd === 'string' && body.cwd.trim()) {
+        createReq.cwd = body.cwd.trim();
+      }
+      if (typeof body.agentPreset === 'string' && body.agentPreset.trim()) {
+        createReq.agentPreset = body.agentPreset.trim();
+      }
+      try {
+        const created = await ctrl.create(createReq);
+        const sid = created && created.sessionId ? String(created.sessionId) : '';
+        if (!sid) {
+          json(res, 500, { ok: false, error: 'session_create_empty',
+            detail: 'sessionController.create 未返回 sessionId' });
+          return true;
+        }
+        json(res, 200, {
+          ok: true,
+          created: true,
+          sessionId: sid,
+          agentPreset: created.agentPreset ?? null,
+          cwd: createReq.cwd || null,
+          workspaceId: createReq.workspaceId || null,
+        });
+      } catch (error) {
+        json(res, 500, {
+          ok: false,
+          error: String(error && error.code ? error.code : 'session_create_failed'),
+          message: String(error && error.message ? error.message : error),
+        });
+      }
+      return true;
+    }
+
     return false;
   }
 
@@ -796,6 +854,7 @@ export function apply(ctx, config = {}) {
       '/api/harbor/target',
       '/api/harbor/wake',
       '/api/harbor/say',
+      '/api/harbor/new-session',
       '/api/harbor/feishu_bot-reply',
     ]) {
       disposers.push(

@@ -1,5 +1,17 @@
 # 变更记录
 
+## 0.6.0（2026-11-24）
+
+- **DSH 选窗卡片与一键新建会话直投**：
+  - `plugins/dsh-plugin-harbor` 新增 `POST /api/harbor/new-session`（基于宿主 `sessionController.create()`，需鉴权），支持在 DSH 内直接创建新会话并返回 `sessionId`。
+  - 新增 `tools/dsh_draft.py`，并在 `tools/card_service.py`、`tools/ask_card.py`、`tools/reach_dsh.py` 接入 `--ask` 分组选窗与「＋ 一键在 DSH 新建对话并投递」（优先调 Harbor 自动建窗并拉前台直投，Harbor 不可达时优雅降级 `dsh://open` 拉起前台）。
+  - `tools/channel_params.py` 全部请求改为绕过系统代理（`ProxyHandler({})`），修复局域网 Harbor 请求误走系统代理导致 `HTTP 502` / 超时的问题。
+- **Porta 绑定判定单一正本、人点名一步直投与档位标签**：
+  - `tools/porta_adapter.py` 的 `binding_verdict()` 升级为单一正本：统一排除归档与不可达会话，改按 `lastModifiedTime` 排序（新建空窗 `stepCount=0` 不再顶掉在用窗口），接入相关度判定（无关工作区/任务新窗只提示不拦原绑定），并开放 `confirmed=True` 人点名放行口（回执落 `humanConfirmation`）。
+  - `tools/ask_card.py --from-porta` 新增 `--send-file` / `--send-text` / `--peer-agent`，卡片点选后自动带 `confirmed=True, confirmed_by="card_pick"` 一步直投，消除选窗与发件两段式死锁。
+  - `tools/msg_envelope.py` 新增 `ensure_tier_tag()`，`porta_adapter` 发件时正文首行缺 `[速答]`/`[判断]`/`[详解]` 会自动补 `[判断] ` 并在回执记 `tierTagAutoFilled: true`。
+- **测试补齐**：新增 `tests/test_dsh_card.py` 并扩展 `tests/test_porta_binding.py`，全量 `run_tests.py`（41 项 unittest ＋ 8 组独立脚本）与 Node 插件测试全部通过。
+
 ## 0.5.0（2026-11-24）
 
 - **分组选窗 ＋ 每组底部「＋ 新建窗口并发送」**：

@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "channel": "stable",
   "releasedAt": "2026-11-24",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.5.0.zip",
-      "sha256": "d5054af9a4c6a4cd04bf7f592212bd471f042a891474674f65e2158f7a2316f3",
-      "size": 215271
+      "name": "kit-0.6.0.zip",
+      "sha256": "",
+      "size": 0
     }
   ],
   "plugins": [],
-  "notes": "分组选窗每组支持新建窗口并发送、桌面卡片拉起规范与端口三级配置"
+  "notes": "DSH 选窗与一键新建会话直投、Harbor 绕过系统代理、Porta 绑定单一正本与卡片一步直投、档位标签自动补齐"
 }

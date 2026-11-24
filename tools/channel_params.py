@@ -121,9 +121,12 @@ def feishu_bot() -> dict:
     return _side(load(), "feishu_bot")
 
 
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def _get(url: str, token: str, timeout: float = 15.0):
     req = urllib.request.Request(url, headers={"X-Harbor-Token": token}, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _NO_PROXY_OPENER.open(req, timeout=timeout) as resp:
         return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
 
 
@@ -132,7 +135,7 @@ def post_json(url: str, token: str, payload: dict, timeout: float = 20.0):
     req = urllib.request.Request(
         url, data=data,
         headers={"Content-Type": "application/json", "X-Harbor-Token": token}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _NO_PROXY_OPENER.open(req, timeout=timeout) as resp:
         return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
 
 

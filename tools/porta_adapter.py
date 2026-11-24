@@ -156,31 +156,145 @@ def wrap_origin_idempotent(text: str, peer_agent: str) -> str:
     return origin_line(peer) + ("\n" + body if body else "")
 
 
-def binding_verdict(binding: str, chosen: str, rows: list) -> dict:
-    """投前现查：绑定是不是已经被更新的会话取代。
+def _norm_ws_path(p: Optional[str]) -> str:
+    return str(p or "").replace("\\\\?\\", "").replace("/", "\\").strip().lower().rstrip("\\")
 
-    rows: [{"id": str, "last": str}]，按 last 倒序排好（新的在前）。
-    - 选的是最新一条：放行；
-    - 没有绑定：拒（不能自己挑）；
-    - 选的是旧绑定、且它是最新：放行；
-    - 选的是旧绑定、但已有更新的：拒（new_window_needs_confirm）；
+
+def _row_activity_key(row: dict) -> str:
+    """F3 单一口径：优先用 lastModifiedTime / last / lastActivity；空窗(stepCount==0)不以 created 顶掉在用窗。"""
+    last = str(row.get("last") or row.get("lastModifiedTime") or row.get("lastActivity") or "").strip()
+    if last:
+        return last
+    steps = row.get("stepCount")
+    if steps is not None and int(steps or 0) <= 0:
+        return ""
+    return str(row.get("created") or row.get("createdTime") or "").strip()
+
+
+def _is_unrelated_newer(newer: dict, bound: dict, task: Optional[dict] = None) -> Tuple[bool, int, List[str]]:
+    """按 relevance_gate 三信号口径判一个更新的窗口是否与当前绑定/任务无关。
+    返回 (is_unrelated, score, clues)；证据不足时保守不判无关，防止误放行。
+    """
+    clues: List[str] = []
+    score = 0
+    t_cwd = _norm_ws_path((task or {}).get("cwd") or bound.get("cwd"))
+    c_cwd = _norm_ws_path(newer.get("cwd"))
+    t_proj = str((task or {}).get("project") or bound.get("project") or "").strip().lower()
+    c_proj = str(newer.get("project") or "").strip().lower()
+    has_scope_evidence = False
+    if t_cwd and c_cwd:
+        has_scope_evidence = True
+        if c_cwd == t_cwd or c_cwd.startswith(t_cwd + "\\") or t_cwd.startswith(c_cwd + "\\"):
+            score += 3
+            clues.append("workspace")
+    elif t_proj and c_proj and t_proj != "outside-of-project" and c_proj != "outside-of-project":
+        has_scope_evidence = True
+        if c_proj == t_proj:
+            score += 3
+            clues.append("project")
+
+    tp = {str(x).lower() for x in ((task or {}).get("participants") or []) if str(x).strip()}
+    cp = {str(x).lower() for x in (newer.get("participants") or []) if str(x).strip()}
+    owner = str(newer.get("owner") or "").lower()
+    if tp and cp and ((tp & cp) - {owner}):
+        score += 2
+        clues.append("role")
+
+    kw = str((task or {}).get("name") or "").strip().lower()
+    if kw:
+        title = str(newer.get("title") or "").lower()
+        first_user = str(newer.get("first_user") or "")[:512].lower()
+        if kw in title or kw in first_user:
+            score += 2
+            clues.append("text")
+
+    can_exclude = has_scope_evidence or bool(kw)
+    return (can_exclude and score < 2), score, clues
+
+
+def binding_verdict(
+    binding: str,
+    chosen: str,
+    rows: list,
+    *,
+    confirmed: bool = False,
+    confirmed_by: str = "",
+    confirmed_basis: str = "",
+    task: Optional[dict] = None,
+) -> dict:
+    """投前现查唯一正本（F1/F2/F3/F7）：绑定是不是已经被相关的更新会话取代。
+
+    规则：
+    - 先统一排除已归档与不可达会话，并按 lastModifiedTime（非空窗才兜底 created）倒序排；
+    - 人已点名（confirmed=True）且目标活跃未归档：直接放行并带确认记录；
+    - 选的是当前最新活跃会话：放行；
+    - 没有绑定：拒（no_binding_need_confirm）；
+    - 选的是旧绑定、且它最新：放行；
+    - 选的是旧绑定、前面有更新的会话：按相关度打分，全是无关新窗（<2 分）则放行并提示，否则拒（new_window_needs_confirm）；
     - 既不是绑定也不是最新：拒（chosen_not_bound）。
     """
-    if not rows:
+    active = [
+        r for r in (rows or [])
+        if isinstance(r, dict) and r.get("id") and r.get("archived") is not True and r.get("reachable") is not False
+    ]
+    if not active:
         return {"ok": True, "reason": "no_rows"}
-    newest = rows[0]
-    if chosen.startswith(newest["id"][:8]):
+    if any(_row_activity_key(r) for r in active):
+        active = sorted(active, key=_row_activity_key, reverse=True)
+
+    chosen_s = (chosen or "").strip()
+    binding_s = (binding or "").strip()
+
+    if confirmed:
+        hit = next((r for r in active if chosen_s and (r["id"].startswith(chosen_s[:8]) or chosen_s.startswith(r["id"][:8]))), None)
+        if hit is not None:
+            return {
+                "ok": True,
+                "reason": "human_confirmed",
+                "target": hit["id"],
+                "confirmed_by": (confirmed_by or "human").strip(),
+                "confirmed_basis": (confirmed_basis or "explicit").strip(),
+                "confirmed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        return {"ok": False, "reason": "target_not_active", "newer": active[0]}
+
+    newest = active[0]
+    if chosen_s and chosen_s.startswith(newest["id"][:8]):
         return {"ok": True, "reason": "chosen_newest"}
-    if not binding:
+    if not binding_s:
         return {"ok": False, "reason": "no_binding_need_confirm", "newer": newest}
-    idx = next((i for i, r in enumerate(rows) if r["id"].startswith(binding[:8])), None)
+    idx = next((i for i, r in enumerate(active) if r["id"].startswith(binding_s[:8])), None)
     if idx is None:
         return {"ok": False, "reason": "binding_missing", "newer": newest}
-    if not (chosen.startswith(binding[:8]) or binding.startswith(chosen[:8])):
+    if not (chosen_s.startswith(binding_s[:8]) or binding_s.startswith(chosen_s[:8])):
         return {"ok": False, "reason": "chosen_not_bound", "newer": newest}
     if idx == 0:
         return {"ok": True, "reason": "bound_target_no_newer"}
-    return {"ok": False, "reason": "new_window_needs_confirm", "newer": newest}
+
+    bound_row = active[idx]
+    blocking_newer: list = []
+    ignored_newer: list = []
+    for cand in active[:idx]:
+        unrelated, sc, clues = _is_unrelated_newer(cand, bound_row, task=task)
+        if unrelated:
+            ignored_newer.append({**cand, "relevance_score": sc, "relevance_clues": clues})
+        else:
+            blocking_newer.append({**cand, "relevance_score": sc, "relevance_clues": clues})
+
+    if not blocking_newer:
+        return {
+            "ok": True,
+            "reason": "bound_target_newer_unrelated",
+            "ignored_newer": ignored_newer,
+            "notice": f"发现 {len(ignored_newer)} 条无关新窗，已放行原绑定",
+        }
+    return {
+        "ok": False,
+        "reason": "new_window_needs_confirm",
+        "newer": blocking_newer[0],
+        "blocking_newer": blocking_newer,
+        "ignored_newer": ignored_newer,
+    }
 
 
 def extract_body_fingerprint(wrapped_text: str, max_len: int = 0) -> str:
@@ -1107,6 +1221,11 @@ class PortaAdapter:
         expected_cwd: Optional[str] = None,
         binding: Optional[str] = None,
         from_addr: Optional[str] = None,
+        confirmed: bool = False,
+        confirmed_by: str = "",
+        confirmed_basis: str = "",
+        task: Optional[Dict[str, Any]] = None,
+        auto_tier: bool = True,
     ) -> Tuple[int, Dict[str, Any]]:
         """投递前二次 verify_target → 强制 ORIGIN 幂等＋clientMessageId → 投后 /steps?tail= 真核验。
         expected_host/role/cwd＝选中键完整地址（GPT桥复审#2）：在真正用于 POST 的这次快照上终验，dry-run 同闸。"""
@@ -1118,12 +1237,31 @@ class PortaAdapter:
         # 投前二次复验（防选完卡片犹豫期间窗变 RUNNING/关闭/归档）；同一份枚举既供复验也供 POST（GPT桥复审#2）
         er = self.enumerate()
 
-        # 投前现查绑定：有新窗口出现时不许默认继续投旧窗（2026-11-24 口径）
+        # 投前现查绑定（单一正本 binding_verdict：排归档、按 lastModifiedTime 排、无关新窗放行、支持人点名确认）
         _binding = (binding if binding is not None else os.environ.get("PORTA_BINDING", "")).strip()
-        rows = [{"id": c.id, "last": c.meta.get("createdTime") or c.lastActivity or ""}
-                for c in er.candidates if c.reachable]
-        rows.sort(key=lambda row: row["last"], reverse=True)
-        chk = binding_verdict(_binding, conv_id, rows)
+        rows = [
+            {
+                "id": c.id,
+                "title": c.title,
+                "cwd": c.cwd,
+                "project": (c.meta or {}).get("projectId") or "",
+                "last": c.lastActivity or (c.meta or {}).get("lastModifiedTime") or "",
+                "created": (c.meta or {}).get("createdTime") or "",
+                "stepCount": (c.meta or {}).get("stepCount"),
+                "archived": (c.status == "archived") or (getattr(c, "unusableReason", None) == "archived"),
+                "reachable": c.reachable,
+            }
+            for c in er.candidates
+        ]
+        chk = binding_verdict(
+            _binding,
+            conv_id,
+            rows,
+            confirmed=confirmed,
+            confirmed_by=confirmed_by,
+            confirmed_basis=confirmed_basis,
+            task=task,
+        )
         if not chk["ok"]:
             return EXIT_TARGET_INVALID, {
                 "ok": False, "code": EXIT_TARGET_INVALID, "stage": "binding_check",
@@ -1178,8 +1316,12 @@ class PortaAdapter:
                                               "reason": "cwd_drift", "detail": "POST前快照工作区已漂移", "leg": self.LEG,
                                               "convId": conv_id, "at": _iso_stamp(self._now())}
         sender = (from_addr if from_addr is not None else os.environ.get("KIT_FROM_ADDR", "")).strip()
+        tier_filled = False
+        body_text = text
+        if auto_tier:
+            body_text, tier_filled = msg_envelope.ensure_tier_tag(text)
         try:
-            wrapped = msg_envelope.for_delivery(text, from_addr=sender,
+            wrapped = msg_envelope.for_delivery(body_text, from_addr=sender,
                                                 to_addr=msg_envelope.addr(self.LEG, cand.hostId, cand.id),
                                                 peer_agent=peer_agent)
         except ValueError as exc:
@@ -1202,7 +1344,19 @@ class PortaAdapter:
             "preStep": pre_step,
             "chars": len(wrapped),
             "truncated": cand.truncated,
+            "bindingVerdict": chk.get("reason"),
         }
+        if tier_filled:
+            base_receipt["tierTagAutoFilled"] = True
+            base_receipt["tierTag"] = "判断"
+        if chk.get("reason") == "human_confirmed":
+            base_receipt["humanConfirmation"] = {
+                "by": chk.get("confirmed_by"),
+                "basis": chk.get("confirmed_basis"),
+                "at": chk.get("confirmed_at"),
+            }
+        if chk.get("ignored_newer"):
+            base_receipt["ignoredNewerNotice"] = chk.get("notice") or ""
 
         if dry_run:
             return EXIT_OK, dict(

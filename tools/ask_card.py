@@ -48,7 +48,10 @@ def _request_card(payload: dict, flat_options: list[dict], timeout: float) -> di
                 raise ValueError("卡片回答不对应请求里的选项")
             picked = flat_options[choice]
             if picked.get("action") == "new_window":
-                return {**picked, "desktop_draft_requested": result.get("desktop_draft_requested") is True}
+                extra = {"desktop_draft_requested": result.get("desktop_draft_requested") is True}
+                if isinstance(result.get("created_session_id"), str) and result["created_session_id"]:
+                    extra["created_session_id"] = result["created_session_id"]
+                return {**picked, **extra}
             return picked
         if result.get("status") != "pending":
             return None
@@ -193,12 +196,17 @@ def porta_groups(limit_each: int = 6, *, binding: str = "") -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="向宿主卡片服务请求 Porta 选窗（不发送消息）")
+    parser = argparse.ArgumentParser(description="向宿主卡片服务请求 Porta 选窗（可选一步直投）")
     parser.add_argument("--from-porta", required=True, action="store_true")
     parser.add_argument("--binding", default="")
-    parser.add_argument("--title", default="猫猫：选哪个对话？")
+    parser.add_argument("--title", default="选择对话窗口")
     parser.add_argument("--asker", default="assistant")
     parser.add_argument("--timeout", type=float, default=300.0)
+    parser.add_argument("--send-file", default="", help="选完后直接把该文件内容投递到所选窗口（带人点名确认）")
+    parser.add_argument("--send-text", default="", help="选完后直接把该文本投递到所选窗口（带人点名确认）")
+    parser.add_argument("--peer-agent", default="desktop_bot", help="发件同僚名（配合 --send-file/--send-text）")
+    parser.add_argument("--from-addr", default="", help="回程地址（配合 --send-file/--send-text）")
+    parser.add_argument("--no-wait", action="store_true", help="投递后不等待对方回复")
     args = parser.parse_args(argv)
     try:
         groups = porta_groups(binding=args.binding)
@@ -212,8 +220,28 @@ def main(argv: list[str] | None = None) -> int:
     if selected is None:
         return 5
     flat = [item for group in groups for item in group["options"]]
-    print(json.dumps({"choice": flat.index(selected), "option": selected["label"], "target": selected["id"]},
-                     ensure_ascii=False))
+    out = {"choice": flat.index(selected), "option": selected["label"], "target": selected["id"]}
+    body = args.send_text or ""
+    if args.send_file:
+        body = Path(args.send_file).read_text(encoding="utf-8-sig")
+    if body.strip():
+        import porta_adapter
+        adapter = porta_adapter.PortaAdapter()
+        code, info = adapter.deliver(
+            selected["id"],
+            body,
+            peer_agent=args.peer_agent,
+            binding=args.binding or selected["id"],
+            from_addr=args.from_addr or None,
+            confirmed=True,
+            confirmed_by="card_pick",
+            confirmed_basis=f"card_pick:{args.asker}:{selected['id'][:8]}",
+            wait_for_reply=not args.no_wait,
+        )
+        out["delivery"] = info
+        print(json.dumps(out, ensure_ascii=False))
+        return code
+    print(json.dumps(out, ensure_ascii=False))
     return 0
 
 

@@ -70,10 +70,112 @@ except Exception:  # noqa: BLE001
     pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ask_card  # noqa: E402
 import channel_params as CP  # noqa: E402
 import msg_envelope as ME  # noqa: E402
 
 import delivery_receipt as DR  # noqa: E402  回执：送到没、为什么没送到
+
+
+def _ask_desktop_via_card(m: dict, got: dict, timeout: float = 300.0) -> dict | None:
+    """当目标缺失、归档、绑定失效或歧义时，调系统卡片服务请用户选窗、唤起 DSH 新建或重扫。"""
+    def _build_groups(cands: list[dict], err_reason: str) -> list[dict]:
+        groups: list[dict] = []
+        if cands:
+            opts = []
+            for idx, c in enumerate(cands, 1):
+                title = (c.get("title") or "").strip()
+                created = str(c.get("createdAt") or "").strip()
+                label = title or ("桌面助手对话 #%d" % idx)
+                desc = ("创建于 %s" % created) if created else "活跃 DSH 桌面窗口"
+                opts.append({
+                    "id": c.get("sessionId") or "",
+                    "label": label,
+                    "description": desc,
+                    "tags": ["活跃"],
+                    "action": "pick",
+                })
+            groups.append({"title": "已有活跃 DSH 窗口", "kind": "session", "options": opts})
+        groups.append({
+            "title": "其他操作" if cands else "当前没有活跃的 DSH 窗口（%s）" % err_reason,
+            "kind": "session",
+            "options": [
+                {
+                    "id": "__new__:dsh",
+                    "label": "＋ 一键在 DSH 新建对话并投递",
+                    "description": "优先通过港湾直接建新会话并投递；若港湾未就绪则拉起 DSH 到前台",
+                    "tags": ["新建"],
+                    "action": "new_window",
+                    "app": "dsh",
+                },
+                {
+                    "id": "__rescan__",
+                    "label": "我已在 DSH 打开新窗口，重新扫描并投递",
+                    "description": "重新刷新身份并扫描当前活跃的 DSH 窗口",
+                    "action": "rescan",
+                },
+                {
+                    "id": "__cancel__",
+                    "label": "暂不投递（取消）",
+                    "description": "本次不发送，稍后再试",
+                    "action": "cancel",
+                },
+            ],
+        })
+        return groups
+
+    cur_got = got
+    for _attempt in range(5):
+        cands = [c for c in (cur_got.get("candidates") or []) if isinstance(c, dict) and c.get("sessionId")]
+        err_reason = str(cur_got.get("verify_error") or cur_got.get("error") or "需要选窗")
+        picked = ask_card.choose_from_groups(
+            _build_groups(cands, err_reason),
+            timeout=timeout,
+            title="选择接收消息的 DSH 窗口",
+            subtitle="旧绑定已不可用或存在多个窗口，请点选目标、唤起 DSH 新建对话，或开窗后点重新扫描。",
+            asker="reach_dsh",
+        )
+        if not picked or picked.get("action") == "cancel":
+            return None
+        if picked.get("action") == "pick" and picked.get("id"):
+            return CP.resolve_desktop_session(m, explicit=str(picked["id"]))
+        if picked.get("action") == "new_window":
+            created_sid = str(picked.get("created_session_id") or "").strip()
+            if created_sid:
+                print("已在 DSH 自动新建会话 %s…，正在刷新身份并直接投递…" % created_sid[:20])
+                for wait_i in range(3):
+                    try:
+                        CP.refresh_identity(force=True)
+                    except Exception:
+                        pass
+                    res = CP.resolve_desktop_session(m, explicit=created_sid)
+                    if res.get("ok"):
+                        return res
+                    if wait_i < 2:
+                        time.sleep(0.3)
+                cur_got = res
+                continue
+            if picked.get("desktop_draft_requested") is True:
+                print("已通过 dsh://open 请求唤起 DSH 桌面端；请在 DSH 新建对话后，在下一张卡片点「重新扫描并投递」。")
+            else:
+                print("宿主卡片服务尚未确认唤起 DSH（如刚更新 card_service.py，请由宿主机重启卡片服务；或手动切到 DSH 新建对话后再点重新扫描）。")
+            continue
+        if picked.get("action") == "rescan":
+            try:
+                CP.refresh_identity(force=True)
+            except Exception:
+                pass
+            res = CP.resolve_desktop_session(m, explicit="")
+            if res.get("ok"):
+                return res
+            new_cands = [c for c in (res.get("candidates") or []) if isinstance(c, dict) and c.get("sessionId")]
+            if len(new_cands) == 1:
+                v = CP.resolve_desktop_session(m, explicit=str(new_cands[0]["sessionId"]))
+                if v.get("ok"):
+                    return v
+            cur_got = res
+            continue
+    return None
 
 RECEIPT = str(DR.receipt_path("desktop_bot"))  # 兼容旧读法；写入走 DR.record
 
@@ -107,6 +209,10 @@ def main(argv=None) -> int:
                     help="发件方会话 id（默认取 DSH_SESSION_ID；用来把回话关联回原窗口）")
     ap.add_argument("--origin", default="",
                     help="发件同僚 AI 名（如 review_bot/gpt）；正文首行加 ORIGIN 信任名牌（P1-3）")
+    ap.add_argument("--ask", action="store_true",
+                    help="目标缺失/归档/歧义时弹系统选窗卡片请用户点选、唤起 DSH 或重扫")
+    ap.add_argument("--card-timeout", type=float, default=300.0,
+                    help="等待选窗卡片的秒数（默认 300）")
     args = ap.parse_args(argv)
     _QUERY["on"] = bool(getattr(args, "whoami", False) or getattr(args, "dry_run", False))
 
@@ -118,6 +224,16 @@ def main(argv=None) -> int:
         return 2
 
     got = CP.resolve_desktop_session(m, explicit=(args.session_id or "").strip())
+    if (not got.get("ok")) and args.ask and not (args.session_id or "").strip():
+        err_try = str(got.get("error") or "")
+        if err_try in ("binding_invalid", "ambiguous", "target_archived", "no_target", "no session"):
+            try:
+                picked_got = _ask_desktop_via_card(m, got, timeout=args.card_timeout)
+            except Exception as exc:  # noqa: BLE001
+                print("调系统选窗卡片失败：%s" % exc)
+                picked_got = None
+            if picked_got is not None:
+                got = picked_got
     if not got.get("ok"):
         err = str(got.get("error") or "")
         detail = str(got.get("detail") or "")

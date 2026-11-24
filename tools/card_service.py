@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import codex_draft
+import dsh_draft
 
 CARD_DIR = Path(os.environ.get("CARD_DIR")
                 or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / ".multi-ai-collab-kit" / "cards"))
@@ -112,13 +113,29 @@ def _answer_on_desktop(rec: dict, idx: int, draft_prompt: str) -> None:
         return
     rec.update(status="answered", choice=idx, answered=time.strftime("%Y-%m-%d %H:%M:%S"))
     option = rec["flat"][idx]
-    if option.get("action") == "new_window" and draft_prompt:
-        try:
-            codex_draft.request_draft(str(option.get("cwd") or ""), draft_prompt)
-        except (OSError, ValueError):
-            rec["desktop_draft_requested"] = False
-        else:
-            rec["desktop_draft_requested"] = True
+    if option.get("action") == "new_window":
+        app_kind = str(option.get("app") or "codex").strip().lower()
+        if app_kind == "dsh":
+            try:
+                res = dsh_draft.request_new_session_from_channel(
+                    cwd=str(option.get("cwd") or ""),
+                    agent_preset=str(option.get("agent_preset") or ""),
+                )
+            except (OSError, ValueError):
+                rec["desktop_draft_requested"] = False
+            else:
+                if res.get("created") and res.get("sessionId"):
+                    rec["desktop_draft_requested"] = True
+                    rec["created_session_id"] = str(res["sessionId"])
+                else:
+                    rec["desktop_draft_requested"] = bool(res.get("opened"))
+        elif draft_prompt:
+            try:
+                codex_draft.request_draft(str(option.get("cwd") or ""), draft_prompt)
+            except (OSError, ValueError):
+                rec["desktop_draft_requested"] = False
+            else:
+                rec["desktop_draft_requested"] = True
     _write(rec)
 
 

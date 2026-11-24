@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multi-ai-collab-kit"
-version = "0.5.0"
+version = "0.6.0"
 description = "让本机多个已经开着的异构 AI 窗口像同事一样互相派活、接棒、核验的机制层工具"
 readme = "README.md"
 requires-python = ">=3.10"
