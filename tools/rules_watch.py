@@ -18,34 +18,35 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 CORE = os.path.join(REPO, "rules", "core.md")
-STATE = os.path.join(REPO, "rules", ".sync-state.json")
+STATE = Path(os.environ.get("KIT_RULES_STATE") or Path(REPO) / "rules" / ".sync-state.json")
 INIT = os.path.join(HERE, "init_rules.py")
 
 
 def core_digest() -> str:
-    src = io.open(CORE, encoding="utf-8").read().strip()
+    src = Path(CORE).read_text(encoding="utf-8").strip()
     return hashlib.sha256(src.encode("utf-8")).hexdigest()[:16]
 
 
 def load_state() -> dict:
     try:
-        return json.loads(io.open(STATE, encoding="utf-8").read())
+        return json.loads(STATE.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def save_state(d: dict) -> None:
-    io.open(STATE, "w", encoding="utf-8", newline="\n").write(json.dumps(d, ensure_ascii=False, indent=2))
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 
 
 def sync(targets: list[str], force: bool = False) -> int:
@@ -93,12 +94,24 @@ def main(argv=None) -> int:
         return 2
     if a.once or not a.watch:
         return sync(a.target, a.force)
+    def target_stamps():
+        stamps = []
+        for target in a.target:
+            try:
+                stat = Path(target).stat()
+                stamps.append((stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                stamps.append(None)
+        return tuple(stamps)
+
     last = None
+    force = a.force
     while True:
-        d = core_digest()
-        if d != last:
-            last = d
-            sync(a.target)
+        signature = core_digest(), target_stamps()
+        if signature != last:
+            sync(a.target, force)
+            force = False
+            last = signature[0], target_stamps()
         time.sleep(max(5, a.interval))
 
 

@@ -54,9 +54,9 @@ PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _OLD_CHANNEL = os.path.join(PROJECT, "档案库", "工作台", "通道.json")
 try:
     _HUB_CHANNEL = os.path.join(str(ap.paths.resolve_root(for_write=False)[0]), "_state", "通道.json")
-except Exception:
+except ap.paths.RootError:
     _HUB_CHANNEL = ""
-CHANNEL = os.environ.get("DSH_CHANNEL_FILE") or (_HUB_CHANNEL if _HUB_CHANNEL and os.path.isfile(_HUB_CHANNEL) else _OLD_CHANNEL)
+CHANNEL = os.environ.get("DSH_CHANNEL_FILE") or (_HUB_CHANNEL or _OLD_CHANNEL)
 
 # 来件台账：插件受理投递时写的一行 JSONL（{at,to,from,fromRole,requestId,mode}）。
 # 回话时先用它找回"这条消息是谁从哪个窗口发来的"，再按 R1 复验那个窗口。
@@ -589,23 +589,29 @@ def archived_session_ids() -> set:
     return {str(x) for x in a if x}
 
 
-def describe() -> int:
-    """把两边解析出来的参数打一遍（口令打码）——这就是"手册里的参数现在是什么"。"""
-    print("=== 互通参数（全部来自唯一正本）===")
+def describe(*, live: bool = False) -> int:
+    """先检查本机配置。连接真实客户端需要显式选择 --live。"""
     print("正本：", os.environ.get("DSH_CHANNEL_FILE", CHANNEL))
+    try:
+        cfg = load()
+    except (OSError, ValueError, AttributeError) as exc:
+        print(f"无法读取通道配置：{exc}")
+        return 2
     ok = True
-    for name, fn in (("desktop_bot（我，飞书助手投给我）", desktop_bot), ("feishu_bot（她，我叫醒她）", feishu_bot)):
-        try:
-            s = fn()
-        except Exception as exc:  # noqa: BLE001
-            print("  ✗ %s：%s" % (name, exc))
+    for name in ("desktop_bot", "feishu_bot"):
+        side = cfg.get(name)
+        if not isinstance(side, dict) or not side.get("host") or not side.get("port"):
+            print(f"  ✗ {name} 缺少 host 或 port")
             ok = False
             continue
-        print("  ✓ %s" % name)
-        print("      地址 %s   口令 %s   policy=open"
-              % (s["base"], s["token_masked"]))
-        if s.get("session_cwd"):
-            print("      session_cwd=%s（换新对话时用它解析当前会话）" % s["session_cwd"])
+        credentials = "已配置" if side.get("token") else "待填写库外凭据"
+        print(f"  ✓ {name} {side['host']}:{side['port']}｜口令{credentials}｜policy={side.get('policy', 'open')}")
+    if not ok:
+        return 2
+    if not live:
+        print("通道配置可读。接好客户端后可加 --live 检查实际会话。")
+        return 0
+
     print("\n=== 会变的参数：按身份现场解析（不是写死的，也不是取最新）===")
     r = resolve_desktop_session()
     if r.get("ok"):
@@ -630,5 +636,14 @@ def describe() -> int:
     return 0 if ok else 2
 
 
+def main(argv=None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="检查通道配置")
+    parser.add_argument("--live", action="store_true", help="解析两侧实际会话，需要客户端与凭据")
+    args = parser.parse_args(argv)
+    return describe(live=args.live)
+
+
 if __name__ == "__main__":
-    raise SystemExit(describe())
+    raise SystemExit(main())

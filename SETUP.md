@@ -6,22 +6,20 @@
 
 ---
 
-## 快速开始（两分钟）
+## 快速开始
+
+在仓库或解压后的工具目录执行以下命令。
 
 ```bash
-git clone https://github.com/nisekoe/multi-ai-collab-kit.git
-cd multi-ai-collab-kit
-
-python run_tests.py                 # 全部离线测试（沙盒根，不碰你的真实档案）
-python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
-python tools/init_rules.py --target AGENTS.md   # 把规则正本刷进你的注入层
+python run_tests.py
+python init_hub.py ./my-hub
+python tools/init_rules.py --root ./my-hub
+python tools/channel_params.py
 ```
 
-最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
+`init_hub.py` 安装配置模板并绑定档案根。`init_rules.py` 写入该根的 `AGENTS.md`。通道检查只读配置。真实宿主接线与口令可稍后填写。
 
-需要人选窗口时再启动常驻卡片服务：`python tools/card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
-
----
+如需安装 Python 工具，先用 `python -m venv .venv` 创建并激活虚拟环境，再运行 `python -m pip install .`。已安装的 `mack-init-hub` 和 `mack-init-rules` 与源码中的初始化工具使用同一套模板。桥接脚本、发布与宿主插件的命令以仓库或附件目录为工作目录。
 
 ## 一、你需要自备的东西
 
@@ -39,47 +37,19 @@ python tools/init_rules.py --target AGENTS.md   # 把规则正本刷进你的注
    - CLI 端（如 Codex CLI，用于 `reach_gpt.py` / `codex_picker_adapter.py`）。
    - *说明*：不需要三端全部装齐！哪怕只装了其中任意两端，也可以按需只启用对应的桥接腿与治理门禁。
 3. **Git（可选）**
-   - 仅在使用 `guard.py` / `sync_check.py` 做仓库变更守护时需要本机 `git` 在 `PATH` 中。
+   - 从源码克隆、打包和仓库变更守护需要 Git。守护工具可以用 `KIT_GIT` 指定 Git 二进制。
 
 ---
 
-## 二、本机路径、六区骨架与入口指针配置（零硬编码）
+## 二、档案根与规则
 
-所有工具统一通过 `paths.py` 的 4 级寻根链定位你的工作区，**代码里不写死任何盘符或个人路径**：
+`init_hub.py` 在档案根生成 `.archive-root.json`、`入口.md`、`AGENTS.md`、`_state/通道.json`、`10-governance/守则/传球判据.json`、账本以及角色的 `scratch.md`。重复初始化保留已有文件。
 
-### 1. 创建六区目录骨架与必需指针文件
-在任意盘符创建你的工作根目录（例如 `D:\my-ai-hub`），并建立以下目录与基础文件（**注意：`closeout.py` 收工对账会读取 `<ARCHIVE_ROOT>/入口.md`、账本与角色 `scratch.md`，请勿漏建**）：
-
-```powershell
-# PowerShell 示例：在 D:\my-ai-hub 建立完整骨架
-$hub = "D:\my-ai-hub"
-mkdir "$hub\_state", "$hub\00-config", "$hub\10-governance\守则", "$hub\10-governance\ledger" -Force
-mkdir "$hub\20-projects\demo-alpha", "$hub\30-roles\planner_bot", "$hub\30-roles\review_bot", "$hub\30-roles\coder_bot", "$hub\90-archive" -Force
-
-# 复制模板就位
-copy templates\.archive-root.json "$hub\.archive-root.json"
-copy templates\入口.md            "$hub\入口.md"
-copy templates\AGENTS.md          "$hub\AGENTS.md"
-copy templates\通道.json          "$hub\_state\通道.json"
-copy templates\传球判据.json      "$hub\10-governance\守则\传球判据.json"
-copy templates\窗口登记模板.json  "$hub\00-config\active_projects.json"
-
-# 创建初始空白账本与角色临时本子
-New-Item -ItemType File -Force "$hub\10-governance\ledger\工作台结果.md", "$hub\10-governance\ledger\待处理事项.md" | Out-Null
-New-Item -ItemType File -Force "$hub\30-roles\planner_bot\scratch.md", "$hub\30-roles\review_bot\scratch.md", "$hub\30-roles\coder_bot\scratch.md" | Out-Null
-```
-
-### 2. 绑定根目录（二选一）
-- **环境变量法（推荐）**：设置 `ARCHIVE_ROOT=D:\my-ai-hub`；
-- **本机指针法**：运行一次：
-  ```bash
-  python paths.py --set-pointer D:\my-ai-hub
-  ```
-  它会在 `%LOCALAPPDATA%\agent-archive\root.txt` 写一行本机指针，以后每次运行自动识别，不污染仓库目录。
-
-### 3. 注入第四层共用纪律（`AGENTS.md`）
-- 打开刚复制到根目录的 `AGENTS.md`（并参考 [GOVERNANCE.md](GOVERNANCE.md)），将其配置为你各 AI 客户端的项目级系统提示词（如 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`）。
-- 只有让 AI 每轮读取这些纪律（如开工先跑 `comm_gate.py`、写文件走 `safe_write.py`、记账走 `ledger_lock.py`、收工跑 `closeout.py`），包内的第 1–3 层工具才会被 AI 真正串联调用。
+- `python init_hub.py ./my-hub --id team-hub` 可以为新档案指定 ID。本机绑定保存该 ID，其他电脑可在绑定前用 `ARCHIVE_ID_EXPECTED` 指定预期值。
+- 本机已有不同的档案指针时，可在当前进程设置 `ARCHIVE_ROOT`，或用 `python init_hub.py ./my-hub --force` 切换本机绑定。
+- `python tools/paths.py --write` 用来核对当前写根。已有档案可以用 `python tools/paths.py --set-pointer ./my-hub` 手动绑定。
+- `python tools/init_rules.py` 写入绑定档案根的 `AGENTS.md`。`--root ./my-hub` 可显式指定档案，`--target <文件>` 可写入其他客户端实际使用的规则文件。`--check` 核对规则。
+- 若需要规则随正本变化自动更新，见 [规则安装与监视](docs/agents-injection.md)。
 
 ---
 
@@ -102,6 +72,9 @@ New-Item -ItemType File -Force "$hub\30-roles\planner_bot\scratch.md", "$hub\30-
 | `ARCHIVE_ID_EXPECTED` | 哨兵校验期望的 `archive_id` | `user-multiagent-hub` |
 | `ARCHIVE_SECRETS_DIR` | 库外凭据目录（放 `.txt` 口令文件） | `%LOCALAPPDATA%\agent-archive\secrets` |
 | `DSH_CHANNEL_FILE` | 覆盖 `通道.json` 路径 | `<ARCHIVE_ROOT>/_state/通道.json` |
+| `CARD_DIR` / `CARD_PORT` | 选窗卡片数据目录和端口 | Windows 优先 `%LOCALAPPDATA%/.multi-ai-collab-kit/cards`，其他情况用 `~/.multi-ai-collab-kit/cards`。端口 `8790` |
+| `DELIVERY_HISTORY` | 四态投递历史文件 | 与卡片目录同级的 `投递历史.jsonl` |
+| `KIT_CODEX_BIN` / `CODEX_HOME` | Codex 二进制及本机会话存储 | PATH 或 Windows 桌面端位置，存储默认为 `~/.codex` |
 | `PORTA_BASE` | IDE 端本地 Porta 服务地址 | `http://127.0.0.1:3170` |
 | `PROTECTED_WORKSPACES` | 受保护工作区关键词（逗号分隔，选窗器强制预排除） | `protected-workspace,private-zone` |
 | `FEISHU_LEGACY_SESSION_PREFIX` | 飞书历史会话 ID 前缀技术约定（可覆盖） | `dfc:` |
@@ -112,4 +85,4 @@ New-Item -ItemType File -Force "$hub\30-roles\planner_bot\scratch.md", "$hub\30-
 
 1. 将 `plugins/dsh-plugin-harbor/` 目录放到 DSH 插件加载目录；
 2. 参考 `templates/cordis.patch.yml` 在你的 profile 中挂载插件（注意 `name: dsh-plugin-harbor` 必填）；
-3. 重启 DSH 后，访问 `/api/harbor/health` 或运行 `python tools/channel_params.py` 验证连通性。
+3. 重启 DSH 后，访问 `/api/harbor/health`，然后运行 `python tools/channel_params.py --live` 验证目标会话。

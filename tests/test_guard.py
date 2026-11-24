@@ -31,8 +31,8 @@ if __name__ == "__main__":
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    SPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guard.py")
-    GIT = r"C:\Program Files\Git\cmd\git.exe"
+    SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "guard.py")
+    GIT = shutil.which("git") or "git"
     spec = importlib.util.spec_from_file_location("guard_under_test", SPEC)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

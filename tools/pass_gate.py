@@ -30,6 +30,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import archive_paths as ap
@@ -136,7 +137,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     try:
-        spec = json.loads(open(SPEC, "rb").read().decode("utf-8-sig"))
+        spec = json.loads(Path(SPEC).read_text(encoding="utf-8-sig"))
     except Exception as exc:  # noqa: BLE001
         print("判据表读不了：%s\n路径：%s" % (exc, SPEC))
         return 2

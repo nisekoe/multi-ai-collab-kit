@@ -5,4 +5,11 @@ __pycache__/
 .pytest_cache/
 dist/
 rules/.sync-state.json
+/my-hub/
+/备份/
+/_备份/
+/logs/
+/build/
+.venv/
+*.egg-info/
 

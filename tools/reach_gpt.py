@@ -34,11 +34,11 @@ r"""桌面助手 → GPT 桌面端（Codex 桌面窗口）：跟 push_feishu.py 
     python tools\reach_gpt.py --list                          只读列出会话及路由资格
     python tools\reach_gpt.py --sync                          刷新 会话登记.json（别名→UUID 正本）
     python tools\reach_gpt.py --check                         逐条核地址有没有失效（归档/删掉/换 id）
-    python tools\reach_gpt.py --to "别名" --file 正文.txt      投到指定那条线，真的续跑一轮
+    python tools/send_codex.py --ask --file 正文.txt          通过选窗入口投递
     python tools\reach_gpt.py --thread <uuid> ...             用本机 UUID 明确点名，仍过投前校验
     python tools\reach_gpt.py --note "这条线干什么" --alias X  给长期工作线补用途说明
     python tools\reach_gpt.py --tail 6                        看 GPT 最近说了什么
-    python tools\reach_gpt.py --text "一句话" --mode queue     非阻塞投递（queue --resume＋轮询判达；desktop 在跑才真消费）
+    python tools/reach_gpt.py --thread UUID --text "一句话" --dry-run  核对目标，不发送
 
 怎么保证「投到正确的对话窗口」——三条硬的：
     一、**不猜**。不点名时合格候选必须恰好一条，多一条就报 4 停下（旧的「取 updated_at 最新」
@@ -90,12 +90,16 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import codex_picker_adapter as picker
+import msg_envelope
+import receipt_tri
+import route_policy
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -130,18 +134,26 @@ def _plain(path: str) -> str:
 
 
 def find_codex() -> str:
-    """按目录时间取最新的 codex.exe —— 版本目录会变，写死必漂。"""
-    pat = os.path.join(os.environ.get("LOCALAPPDATA", ""), "OpenAI", "Codex", "bin", "*", "codex.exe")
-    cands = [p for p in glob.glob(pat) if os.path.isfile(p)]
-    if not cands:
-        raise RuntimeError("找不到 codex.exe（%s）" % pat)
-    cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return cands[0]
+    """优先使用配置或 PATH 中的 Codex 二进制，其次找 Windows 桌面版。"""
+    explicit = os.environ.get("KIT_CODEX_BIN")
+    if explicit:
+        path = Path(explicit).expanduser().resolve()
+        if not path.is_file() or (os.name == "nt" and path.suffix.lower() != ".exe"):
+            raise RuntimeError("KIT_CODEX_BIN 应指向可执行的 Codex 二进制")
+        return str(path)
+    on_path = shutil.which("codex.exe" if os.name == "nt" else "codex")
+    if on_path:
+        return on_path
+    local = os.environ.get("LOCALAPPDATA")
+    candidates = glob.glob(os.path.join(local, "OpenAI", "Codex", "bin", "*", "codex.exe")) if local else []
+    if candidates:
+        return max(candidates, key=os.path.getmtime)
+    raise RuntimeError("找不到 Codex 二进制。将它加入 PATH 或设置 KIT_CODEX_BIN。")
 
 
-def read_snapshot():
+def read_snapshot(registry_path=None):
     return picker.read_snapshot(
-        host_id=LOCAL_HOST_ID, codex_home=Path(CODEX_HOME), registry_path=Path(REG)
+        host_id=LOCAL_HOST_ID, codex_home=Path(CODEX_HOME), registry_path=Path(registry_path or REG)
     )
 
 
@@ -410,6 +422,27 @@ def last_task_complete(path: str):
     return "", ""
 
 
+def rollout_turn_status(path: str) -> str:
+    """Fallback for CLI versions that do not write the desktop turn table."""
+    events = {"task_started": "inProgress", "task_complete": "completed",
+              "turn_aborted": "interrupted", "task_aborted": "interrupted"}
+    status = ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                if "event_msg" not in line or not any(kind in line for kind in events):
+                    continue
+                try:
+                    event = json.loads(line)
+                    if event.get("type") == "event_msg":
+                        status = events.get((event.get("payload") or {}).get("type"), status)
+                except (ValueError, AttributeError):
+                    continue
+    except OSError:
+        return ""
+    return status
+
+
 def receipt(entry: dict):
     try:
         old = []
@@ -419,6 +452,7 @@ def receipt(entry: dict):
             if not isinstance(old, list):
                 old = []
         old.append(entry)
+        Path(RECEIPT).parent.mkdir(parents=True, exist_ok=True)
         with io.open(RECEIPT, "w", encoding="utf-8") as f:
             json.dump(old[-50:], f, ensure_ascii=False, indent=2)
     except Exception as exc:  # noqa: BLE001
@@ -454,7 +488,7 @@ def with_prefix(text: str, nonce: str = "") -> str:
     return origin + "\n" + head + "\n\n" + body
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, selected=False, confirmed=False, from_addr="", task_id="") -> int:
     ap = argparse.ArgumentParser(description="桌面助手 → GPT 桌面端（Codex thread）")
     ap.add_argument("--text", help="要说的话（短）")
     ap.add_argument("--file", help="从文件读正文（长文本/中文多一律用它）")
@@ -480,9 +514,20 @@ def main(argv=None) -> int:
 
     # 机器结果独立通道（GPT桥复审#5）：状态只走结构化JSON，stdout混有回复文本不可作机器判据
     machine = {"nonce": args.nonce, "thread": (args.thread or "").strip(), "mode": args.mode}
+    delivery = not (args.sync or args.note is not None or args.check or args.list or args.whoami or args.tail)
+    attempted = False
+    accepted = None
+    timed_out = False
+    replied = False
+
     def done(code, reason=""):
-        machine["exit"] = code
-        machine["reason"] = reason
+        machine.update(exit=code, reason=reason, status=None, resultKnown=False)
+        if delivery and not args.dry_run:
+            machine.update(receipt_tri.report(
+                "codex", machine["thread"], reason=reason, accepted=accepted,
+                landed=machine.get("landed"), reply=replied, timeout=timed_out,
+                error=reason if not attempted else None,
+            ))
         if args.result_file:
             try:
                 with io.open(args.result_file, "w", encoding="utf-8") as fh:
@@ -495,13 +540,6 @@ def main(argv=None) -> int:
         # pinned 登记册贯穿本进程；校验共用适配器实际解析器（utf-8-sig/行结构/thread_id 同颗粒度，GPT桥复审#4）
         global REG
         REG = str(Path(args.registry))
-
-    try:
-        codex = find_codex()
-    except Exception as exc:  # noqa: BLE001
-        print("环境不对：%s" % exc)
-        print("REASON=env_error")
-        return done(2, "env_error")
 
     try:
         snapshot = read_snapshot()
@@ -553,7 +591,10 @@ def main(argv=None) -> int:
     )
 
     if args.whoami:
-        print(f"codex   ：{codex}")
+        try:
+            print(f"codex   ：{find_codex()}")
+        except RuntimeError as exc:
+            print(exc)
         print(f"目标目录：{GPT_DIR or '（未设置 GPT_DIR）'}")
         if target:
             key = picker.address(snapshot.host_id, target["id"])
@@ -645,12 +686,47 @@ def main(argv=None) -> int:
     idle = time.time() - verified.mtime
     written_at = time.strftime("%H:%M:%S", time.localtime(verified.mtime))
     print(f"  该会话最后写入：{written_at}（{idle:.0f} 秒前）")
+    if not (selected or args.dry_run):
+        print("发送请通过 tools/send_codex.py 选择或确认目标。")
+        return done(4, "selection_required")
+
+    turn, pending = picker.delivery_state(Path(CODEX_HOME), key[2])
+    turn = turn or rollout_turn_status(path)
+    decision = route_policy.decide(
+        has_address=True, turn_status=turn, pending=pending,
+        age_days=None if confirmed else idle / 86400,
+    )
+    route_reason = decision["reason"]
+    if route_reason == "last_turn_interrupted" and args.mode != "sync":
+        print("上一轮被中断，队列可能冻结。请等下一轮，或明确选择 --mode sync。")
+        return done(4, route_reason)
+    if decision["decision"] == route_policy.CONFIRM and route_reason != "last_turn_interrupted":
+        print("需要重新确认该窗口。")
+        return done(4, route_reason)
+    if pending or decision["decision"] == route_policy.DEFER:
+        print("该窗口已有待处理消息，请等它处理完。")
+        return done(7, "pending_queue")
+    if decision["decision"] == route_policy.QUEUE and args.mode == "sync":
+        print("该窗口正在运行，暂缓同步续跑。")
+        return done(7, "turn_in_progress")
+
     if idle < BUSY_WINDOW and not args.force:
-        print("看起来他正在用那个窗口，没投。要投加 --force。")
+        print("目标窗口刚有活动，请等它空闲后再试。")
         print("REASON=busy_window")
         return done(7, "busy_window")
 
-    body = text if args.no_prefix else with_prefix(text, args.nonce)
+    try:
+        if selected:
+            body = msg_envelope.for_delivery(
+                text, to_addr=msg_envelope.addr("codex", key[1], key[2]),
+                peer_agent="desktop_bot", from_addr=from_addr, task_id=task_id,
+                msg_id=f"dispatch-{args.nonce}" if args.nonce else "",
+            )
+        else:
+            body = text if args.no_prefix else with_prefix(text, args.nonce)
+    except ValueError as exc:
+        print(exc)
+        return done(6, "invalid_envelope")
 
     if args.dry_run:
         print("\n--- 会发出去的正文（%d 字）---" % len(body))
@@ -658,11 +734,17 @@ def main(argv=None) -> int:
         print("--- dry-run，没投 ---")
         return done(0, "dry_run")
 
-    t0 = time.time()
-    pre_offset = os.path.getsize(path) if os.path.isfile(path) else 0  # 提交前位置：判达只认新增事件（GPT桥复审#1）
-    work = _plain(target.get("cwd")) or GPT_DIR
+    try:
+        codex = find_codex()
+        pre_offset = os.path.getsize(path)
+    except (OSError, RuntimeError) as exc:
+        print(f"环境不对：{exc}")
+        return done(2, "env_error")
+    work = _plain(target.get("cwd"))
     if not os.path.isdir(work):
-        work = GPT_DIR
+        print("目标工作区当前不可访问。")
+        return done(6, "workspace_missing")
+    t0 = time.time()
     if args.mode == "queue":
         cmd = [codex, "queue", "--thread", target["id"], "--message", body, "--resume"]
     else:
@@ -672,14 +754,19 @@ def main(argv=None) -> int:
         cmd = [codex, "exec", "resume", target["id"], body, "--skip-git-repo-check"]
 
     try:
-        r = subprocess.run(cmd, cwd=work if os.path.isdir(work) else GPT_DIR,
-                           capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=SYNC_TIMEOUT)
+        r = subprocess.run(cmd, cwd=work, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=SYNC_TIMEOUT)
+        attempted = True
         rc, out, err = r.returncode, r.stdout or "", r.stderr or ""
+        accepted = True if rc == 0 else None
     except subprocess.TimeoutExpired as exc:
+        attempted = timed_out = True
         rc = -1
         out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
         err = "timeout %ds" % SYNC_TIMEOUT
+    except OSError as exc:
+        print(f"无法启动 Codex：{exc}")
+        return done(2, "transport_unavailable")
     cost = time.time() - t0
 
     if args.mode == "queue":
@@ -705,7 +792,8 @@ def main(argv=None) -> int:
             if landed and fresh and reply:
                 break
             time.sleep(3)
-        ok = rc == 0 and landed and fresh and bool(reply)
+        replied = bool(landed and fresh and reply)
+        ok = rc == 0 and replied
         print("正文进没进：%s｜有没有新回复：%s（%ds 内）" % (
             "进了" if landed else "没查到", "有" if fresh and reply else "没读到", QUEUE_WAIT))
         if reply and fresh:
@@ -726,7 +814,7 @@ def main(argv=None) -> int:
                 print("  另注：failed-resume 时消息可能残留队列，desktop 后续打开该线或二次消费，别重复投。")
                 print("REASON=delivered_running")
             else:
-                print("\nqueue 没真消费（desktop 没在跑？正文没进 rollout）。兜底：--mode sync（exec resume 真跑一轮）。")
+                print("\n还没有本次正文进会话的证据。先查看回执，避免重复投递。")
                 print("REASON=not_consumed")
             machine["landed"] = bool(landed)
             return done(5, "delivered_running" if landed else "not_consumed")
@@ -742,7 +830,8 @@ def main(argv=None) -> int:
         fresh = bool(ts)
     # 三重才算成：进程 0 ＋ 我的话确实进了这条 rollout ＋ 有一条晚于本轮的新回复。
     # 少一样都不能说"投到了"，尤其不能只看 exit 0（留言模式压根不等回复）。
-    ok = rc == 0 and landed and fresh and bool(reply)
+    replied = bool(landed and fresh and reply)
+    ok = rc == 0 and replied
     print("\nmode=sync exit=%d  %.0fs（%.1f 分）｜正文进没进：%s｜有没有新回复：%s" % (
         rc, cost, cost / 60.0, "进了" if landed else "没查到", "有" if fresh and reply else "没读到"))
     print("投到的是：%s（%s）｜依据：%s" % (_norm(target.get("name")) or "(无名)", target["id"][:13], detail))

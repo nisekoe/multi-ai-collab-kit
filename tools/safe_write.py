@@ -150,7 +150,7 @@ def _validate_content(path: str, text: str) -> None:
     """写完必须能"读回来解析得动"——防止写出语法坏掉的 .json/.jsonl/.py。
 
     2026-11-12 14:2x 加（用户："JSON 的编写也在符号上翻车了，能不能一并纳入修复"）。
-    事实：我往 强制入口.json 里写了一个 Windows 路径 `astrbot_plugin_harbor_return\\wake_context.py`，
+    事实：我往 强制入口.json 里写了一个 Windows 路径 `plugin_demo\\wake_context.py`，
     反斜杠 `\\w` 在 JSON 里是**非法转义** → 整个文件读不了。发现它纯属运气（刚好 rules_check 会 json.load）。
     **能发现是运气，就不能算防住了。** 所以把"能不能解析"变成写盘前的硬闸：
       - .json  → json.loads 必须成功

@@ -1,22 +1,8 @@
 # -*- coding: utf-8 -*-
-r"""整套备份：把"找不回来就完了"的东西打成一个包（2026-11-17 补 GPT 审计尾巴 ⑨）。
+"""备份档案库、工具与已配置的 DSH 数据，生成可逐文件校验的 ZIP。
 
-判据只有一条：**删掉这些东西以后，能不能从这个包把它整个放回去**。所以包里装的
-不是整台机器（node_modules、模型这些重装就能回来，装进去只是把包撑大），而是：
-档案库（git 全历史）、tools 代码、三份记忆库、DSH 会话、DSH 存储与配置、凭证。
-
-一致性的做法：先停掉会写文件的定时任务（DSH_SessionDigest），数据库用 SQLite 的
-在线备份接口复制（不是直接 copy 文件，WAL 没落盘的页也能拿到），做完再把任务恢复。
-
-产出：备份\全量-<时间戳>.zip，里面有 manifest.json（每个文件的大小与 sha256）、
-payload/<标签>/… 和仓库的 git bundle。恢复看 tools\restore_all.py。
-SOURCES 默认按维护者环境列（含 AstrBot 记忆库、DSH 会话等）；你的机器上不存在的来源
-会自动跳过，只备存在的；要备自己的清单就改 SOURCES。找不到档案根（第一个来源）时不打包。
-
-用法：
-    python tools\backup_all.py             # 打包
-    python tools\backup_all.py --keep-raw  # 打包并保留解开的目录（调试用）
-退出码：0 成功 / 1 失败（含冻结恢复失败）/ 2 环境缺项
+KIT_BACKUP_TASK 可填本机任务计划名称。只有查询到可停用的任务且停用成功，
+才会在备份结束后恢复它。KIT_BACKUP_WORKSPACE 可指定额外备份 Markdown 的工作区。
 """
 from __future__ import annotations
 
@@ -25,7 +11,6 @@ import hashlib
 import json
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -35,31 +20,35 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 HOME = Path(os.environ.get("USERPROFILE") or os.path.expanduser("~"))
-DSH = HOME / ".dsh"
+DSH = Path(os.environ.get("DSH_HOME") or HOME / ".dsh")
 OUT_DIR = ROOT / "备份"
 STAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
 ZIP_PATH = OUT_DIR / ("全量-%s.zip" % STAMP)
 
-DIGEST_TASK = "DSH_SessionDigest"
+BACKUP_TASK = os.environ.get("KIT_BACKUP_TASK", "").strip()
 
 import sys as _bsys, os as _bos
 _bsys.path.insert(0, _bos.path.dirname(_bos.path.abspath(__file__)))
 import archive_paths as ap
 
-# (标签, 源路径, 类型) —— 类型：dir 目录、bundle git 仓库、db SQLite 库、file 单文件
-SOURCES = [
-    ("档案库仓库", (ROOT / "档案库") if ap.write_mode() == "old" else __import__("pathlib").Path(str(ap.paths.resolve_root(for_write=False)[0])), "bundle"),
-    ("tools", ROOT / "tools", "dir"),
-    ("记忆库", ROOT / "astrbot" / "data" / "plugin_data" / "astrbot_plugin_memory_companion" / "memory_companion.db", "db"),
-    ("陪伴库", ROOT / "astrbot" / "data" / "plugin_data" / "astrbot_plugin_private_companion" / "installations" / "main" / "runtime" / "companion-v2.sqlite3", "db"),
-    ("记忆检索库", ROOT / "astrbot" / "data" / "plugin_data" / "astrbot_plugin_private_companion" / "installations" / "main" / "runtime" / "memory-search.sqlite3", "db"),
-    ("DSH会话", DSH / "sessions", "dir"),
-    ("DSH存储", DSH / "storages", "dir"),
-    ("DSH集成", DSH / "integrations", "dir"),
-    ("DSH配置", DSH / "profiles" / "desktop", "config-dir"),
-    ("DSH凭证", DSH / ".credentials.yaml", "file"),
-    ("AGENTS", Path(os.path.join(os.path.expanduser("~"), "Documents", "deepseek-harness", "default-workspace")), "workspace-cfg"),
-]
+
+def backup_sources():
+    archive = ap.old_root() if ap.write_mode() == "old" else ap.paths.resolve_root()[0]
+    archive_kind = "bundle" if (archive / ".git").exists() else "dir"
+    sources = [
+        ("档案库仓库", archive, archive_kind),
+        ("tools", ROOT / "tools", "dir"),
+        ("DSH会话", DSH / "sessions", "dir"),
+        ("DSH存储", DSH / "storages", "dir"),
+        ("DSH集成", DSH / "integrations", "dir"),
+        ("DSH配置", DSH / "profiles" / "desktop", "config-dir"),
+        ("DSH凭证", DSH / ".credentials.yaml", "file"),
+    ]
+    workspace = os.environ.get("KIT_BACKUP_WORKSPACE")
+    if workspace:
+        sources.append(("AGENTS", Path(workspace), "workspace-cfg"))
+    return sources
+
 
 # 这些目录里的东西重装/重下就能回来，不进包
 SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv", "uv", "_tmp_", ".plugin-manager"}
@@ -92,39 +81,45 @@ class Report:
         print("  ! " + msg)
 
 
-def freeze() -> str:
-    """停掉会写文件的定时任务，返回停之前的原状态（Ready/Disabled/Running/未知）。"""
-    if os.name != "nt":
-        return "未知"
+def freeze() -> bool:
+    """报告是否成功停用了任务；只有这次停用过才需要恢复。"""
+    if os.name != "nt" or not BACKUP_TASK:
+        return False
     try:
-        out = subprocess.run(["schtasks", "/query", "/tn", DIGEST_TASK, "/fo", "list"],
-                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-        text = out.stdout or ""
-        prev = "Ready"
-        for line in text.splitlines():
-            if "状态" in line or "Status" in line:
-                prev = line.split(":", 1)[1].strip() if ":" in line else line.strip()
-        subprocess.run(["schtasks", "/change", "/tn", DIGEST_TASK, "/disable"],
-                       capture_output=True, text=True, timeout=30)
-        print("已暂停定时任务 %s（原状态 %s），保证流水不在拷贝中途被写" % (DIGEST_TASK, prev))
-        return prev
-    except Exception as exc:  # noqa: BLE001
-        print("  ! 停任务失败（继续做，但会话流水可能拷到一半的状态）：%s" % exc)
-        return "未知"
+        status = subprocess.run(["schtasks", "/query", "/tn", BACKUP_TASK, "/fo", "list"],
+                                capture_output=True, text=True, errors="replace", timeout=30)
+        if status.returncode != 0:
+            print(f"计划任务 {BACKUP_TASK} 无法查询，跳过停用。")
+            return False
+        previous = next((line.partition(":")[2].strip() for line in status.stdout.splitlines()
+                         if line.partition(":")[0].strip() in ("Status", "状态")), "")
+        if previous not in ("Ready", "就绪", "准备就绪"):
+            print(f"计划任务 {BACKUP_TASK} 当前状态为 {previous or '未知'}，跳过停用。")
+            return False
+        changed = subprocess.run(["schtasks", "/change", "/tn", BACKUP_TASK, "/disable"],
+                                 capture_output=True, text=True, errors="replace", timeout=30)
+        if changed.returncode != 0:
+            print(f"计划任务 {BACKUP_TASK} 停用失败，继续备份。")
+            return False
+        print(f"已停用计划任务 {BACKUP_TASK}（备份结束后恢复）。")
+        return True
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"无法停用计划任务 {BACKUP_TASK}：{exc}")
+        return False
 
 
-def thaw(prev: str) -> None:
-    if os.name != "nt" or prev in ("Disabled", "已禁用"):
+def thaw(paused: bool) -> None:
+    if not paused:
         return
     try:
-        r = subprocess.run(["schtasks", "/change", "/tn", DIGEST_TASK, "/enable"],
-                           capture_output=True, text=True, timeout=30)
-        if r.returncode == 0:
-            print("定时任务 %s 已恢复" % DIGEST_TASK)
+        result = subprocess.run(["schtasks", "/change", "/tn", BACKUP_TASK, "/enable"],
+                                capture_output=True, text=True, errors="replace", timeout=30)
+        if result.returncode == 0:
+            print(f"定时任务 {BACKUP_TASK} 已恢复。")
         else:
-            print("  ! 定时任务 %s 不在本机，跳过恢复" % DIGEST_TASK)
-    except Exception as exc:  # noqa: BLE001
-        print("  ! 恢复定时任务失败（不影响备份包本身）：%s" % exc)
+            print(f"定时任务 {BACKUP_TASK} 恢复失败。")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"无法恢复计划任务 {BACKUP_TASK}：{exc}")
 
 
 def walk_dir(src: Path, label: str, manifest: list, payload: Path, rep: Report) -> None:
@@ -168,21 +163,6 @@ def copy_files(src: Path, label: str, manifest: list, payload: Path, rep: Report
     rep.add(label, n, size)
 
 
-def backup_db(src: Path, label: str, manifest: list, payload: Path, rep: Report) -> None:
-    dst = payload / label / src.name
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(src))
-    try:
-        out = sqlite3.connect(str(dst))
-        with out:
-            con.backup(out)
-        out.close()
-    finally:
-        con.close()
-    manifest.append({"label": label, "path": src.name, "bytes": dst.stat().st_size, "sha256": sha256(dst)})
-    rep.add(label, 1, dst.stat().st_size, "（SQLite 在线备份）")
-
-
 def git_bundle(src: Path, label: str, manifest: list, payload: Path, rep: Report) -> str:
     dst = payload / label / "repo.bundle"
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -203,7 +183,12 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-raw", action="store_true", help="保留解开的目录（调试用）")
     args = ap.parse_args(argv)
 
-    missing = [(label, str(p)) for label, p, _ in SOURCES if not Path(p).exists()]
+    try:
+        sources = backup_sources()
+    except ap.paths.RootError as exc:
+        print(f"找不到档案根：{exc}")
+        return 2
+    missing = [(label, str(p)) for label, p, _ in sources if not p.exists()]
     core_missing = any(label == "档案库仓库" for label, _ in missing)
     if core_missing:
         print("找不到档案根，先跑 init_hub.py；本次不打包")
@@ -222,10 +207,9 @@ def main(argv=None) -> int:
     t0 = time.time()
     print("=== 整套备份 %s ===" % STAMP)
 
-    prev = freeze()
-    ok = True
+    paused = freeze()
     try:
-        for label, src, kind in SOURCES:
+        for label, src, kind in sources:
             src = Path(src)
             if not src.exists():
                 print("[%s] 跳过（不存在）：%s" % (label, src))
@@ -233,11 +217,7 @@ def main(argv=None) -> int:
             print("[%s] %s" % (label, src))
             if kind == "bundle":
                 head = git_bundle(src, label, manifest, payload, rep)
-                if not head:
-                    ok = False
                 manifest.append({"label": label, "path": "@head", "bytes": 0, "sha256": head or ""})
-            elif kind == "db":
-                backup_db(src, label, manifest, payload, rep)
             elif kind == "dir":
                 walk_dir(src, label, manifest, payload, rep)
             elif kind == "config-dir":
@@ -247,7 +227,7 @@ def main(argv=None) -> int:
             elif kind == "file":
                 copy_files(src, label, manifest, payload, rep)
     finally:
-        thaw(prev)
+        thaw(paused)
 
     info = {
         "stamp": STAMP,

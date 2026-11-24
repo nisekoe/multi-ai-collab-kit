@@ -1,46 +1,12 @@
-# 把选窗卡片接进规则（部署步骤）
+# 配置选窗卡片
 
-> 规则层（`GOVERNANCE.md` 第五层）写的是「选窗统一走卡片服务」。**只放工具、不做绑定，这条规则就会退化回口头问**——所以部署时按这三步做：装服务、设自启、把三条接线写进注入层。
+需要 Python 3.10+。桌面卡片使用 Tk，网页可在本机浏览器使用。
 
-## 一、装服务
+1. 在工具目录的一个终端运行 `python tools/card_service.py --no-popup`。需要桌面卡片时去掉 `--no-popup`。
+2. 默认只监听 `127.0.0.1:8790`。在浏览器打开该地址即可看待选卡片。
+3. 在另一终端运行 `python tools/send_codex.py --ask --text "选窗试验" --dry-run`。需要先有能通过检查的本机 Codex 窗口。选择一个标题后，命令会输出正文预览。
+4. 先确认正文和目标，之后才用同一入口实际投递。用 `--task` 可保存本次选择，预演不写入任务选择。
 
-需要：Windows + Python 3.9+（自带 tkinter，无需第三方库）。
+Windows 上服务优先使用 `%LOCALAPPDATA%/.multi-ai-collab-kit/cards`，否则使用 `~/.multi-ai-collab-kit/cards`。用 `CARD_DIR` 改存储位置。用 `CARD_PORT` 改端口时，启动和发卡的终端都要设相同的端口。可另用 `python tools/ensure_card_service.py` 启动或检查本机服务。
 
-1. 把 `card_service.py`、`ensure_card_service.py` 放到你的工具目录（和 `picker.py` 等同级即可）。
-2. 直接启动：`python tools/card_service.py`。默认监听 `127.0.0.1:8790`（只绑本机；端口可用 `CARD_PORT` 改），卡片数据写到 `~/.multi-ai-collab-kit/cards`；可用环境变量 `CARD_DIR` 改位置。
-3. 看到「卡片服务 http://127.0.0.1:8790/」就算起来了；浏览器打开该地址是网页版兜底（换了端口就换成对应端口）。
-
-## 二、设开机自启（常驻）
-
-Windows：给 `pythonw.exe card_service.py` 建一个快捷方式，放进「启动」文件夹（`shell:startup`）。用 `pythonw` 是为了不弹黑框。
-
-注意：卡片是「没人选就一直在」的阻塞式交互，服务必须常驻，否则发起方会一直等。
-
-## 三、接线到规则（关键一步）
-
-把下面三条写进你的**每轮注入层**（`AGENTS.md`、注入摘要或平台等价物），规则才算真正绑上：
-
-1. **选窗只用卡片服务**：需要人挑窗口时，POST 到 `127.0.0.1:8790`（默认端口，可用 `CARD_PORT` 改），不许各自弹卡、也不许在正文里甩会话编号。
-2. **投递前先确保服务在跑**：调用 `ensure_card_service.ensure()`；返回失败就停下报原因，不要硬投。
-3. **路由规则**：唯一活跃窗口直接投；同一任务选过就记住，出现新窗口才重新确认；有回程地址就按地址回；其余情况过问。
-
-## 四、验收（三分钟）
-
-1. 起服务后，发一条测试请求：
-
-   ```
-   POST /api/request
-   {"title":"测试","groups":[{"title":"试试","options":[{"label":"甲"},{"label":"乙"}]}]}
-   ```
-
-2. 右下角应弹出一张小卡；点「甲」。
-3. `GET /api/result?id=<刚才返回的 id>` 应看到 `"status":"answered"`、`"choice":0`。
-
-三步都过，规则与工具就绑上了。
-
-## 五、常见故障
-
-- **端口被占**：换 `--port` 时同时设环境变量 `CARD_PORT`（`ensure_card_service` 也读它），并改调用方地址。
-- **没弹窗**：确认用的是有桌面的会话（Windows 服务/无头会话弹不出 Tk 窗口）；这种情况退回网页版。
-- **发起方一直等**：服务没起或卡片被「稍后」关掉；发起方应设超时并报「结果未知」，不要自动重投。
-- **卡片堆积**：服务默认 10 分钟自动过期收起；可改代码里的 TTL。
+`tools/picker.py --card` 可在终端看选项预览。实际选择走 `tools/send_codex.py --ask`，或由已接入的客户端调用 [HTTP 接口](card-service.md)。网页可选窗时，Windows 快捷方式自启是可选项。

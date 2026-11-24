@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import tempfile
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,6 +36,11 @@ def main() -> int:
     print("沙盒档案根：", root)
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", os.path.join(HERE, "tests"), "-p", "test_*.py"]
     rc = subprocess.call(cmd, cwd=HERE, env=env)
+    if rc == 0 and os.environ.get("MACK_HOST_TESTS") == "1":
+        for script in sorted((Path(HERE) / "tests").glob("hostcheck_*.py")):
+            rc = subprocess.call([sys.executable, str(script)], cwd=HERE, env=env)
+            if rc:
+                break
     if rc == 0:
         print("\n全部通过")
     else:

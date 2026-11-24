@@ -24,6 +24,7 @@ if _TOOLS not in _sys.path:
 import importlib.util
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
 
@@ -98,7 +99,7 @@ check("B2 报错后没有残留旧值被误用", CP.feishu_bot.__name__ == "feis
 
 # reach_dsh 侧：没有内置默认 token（源码里不许再出现写死的 token 字面量）
 RD = os.path.join(TOOLS, "reach_dsh.py")
-src = open(RD, encoding="utf-8").read()
+src = Path(RD).read_text(encoding="utf-8")
 import re
 baked = re.findall(r"['\"]([A-Za-z0-9_\-]{20,})['\"]", src)
 suspicious = [b for b in baked if "TOKEN" not in b and b != "auto_switch_after_binding_invalid"

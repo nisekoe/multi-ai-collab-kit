@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -41,7 +42,7 @@ NING_SCRATCH = _wb("临时本子-飞书助手.md")
 PENDING = _wb("待处理事项.md")
 GUARD_REPO = str(ap.old_root()) if ap.write_mode() == "old" else str(ap.paths.resolve_root(for_write=True)[0])
 GUARD_WORKLOG = str(ap.resolve("工作台/工作框架/.guard/worklog.jsonl", for_write=True))
-GIT_EXE = r"C:\Program Files\Git\cmd\git.exe"
+GIT_EXE = os.environ.get("KIT_GIT") or shutil.which("git") or "git"
 PY_EXE = sys.executable
 # PERSONA_CHECK 已于 2026-11-18 退休：它比的是 AstrBot data_v4.db personas.飞书助手，而 AstrBot 11-17 停用、
 # 那个库没有任何活体在读。用户 11-18 20:5x 拍板「人设要不停成长和修正，该搬的都搬过来了，

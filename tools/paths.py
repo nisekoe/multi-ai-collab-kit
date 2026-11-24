@@ -68,7 +68,7 @@ def _validate(root: Path, data: dict) -> None:
     aid = data.get("archive_id")
     if not isinstance(aid, str) or not aid.strip():
         raise RootError("哨兵缺 archive_id：%s" % root)
-    expected = os.environ.get("ARCHIVE_ID_EXPECTED", DEFAULT_ARCHIVE_ID)
+    expected = _expected_archive_id(root)
     if aid != expected:
         raise RootError("archive_id 不符：%s（期望 %s）停写" % (aid, expected))
     ver = data.get("structure_version")
@@ -96,6 +96,23 @@ def _pointer_root():
     if not lines or not lines[0].strip():
         return None
     return Path(lines[0].strip()).expanduser().absolute()
+
+
+def _expected_archive_id(root: Path) -> str:
+    override = os.environ.get("ARCHIVE_ID_EXPECTED")
+    if override is not None:
+        return override
+    try:
+        metadata = json.loads(user_pointer().with_name("root-binding.json").read_text(encoding="utf-8"))
+        bound_root = _pointer_root()
+        if (bound_root is not None and bound_root.resolve() == root.resolve()
+                and metadata.get("root") == str(bound_root.resolve())):
+            archive_id = metadata.get("archive_id")
+            if isinstance(archive_id, str) and archive_id:
+                return archive_id
+    except (OSError, ValueError, AttributeError):
+        pass
+    return DEFAULT_ARCHIVE_ID
 
 
 def resolve_root(cli_root=None, cwd=None, for_write=False):
@@ -144,14 +161,26 @@ def resolve(rel: str, cli_root=None, cwd=None, for_write=False) -> Path:
     return target
 
 
+def _write_pointer(root: Path, archive_id: str) -> Path:
+    ptr = user_pointer()
+    ptr.parent.mkdir(parents=True, exist_ok=True)
+    root = root.resolve()
+    metadata = {"root": str(root), "archive_id": archive_id}
+    # Keep root.txt a single line for the JavaScript Harbor plugin and older clients.
+    ptr.with_name("root-binding.json").write_text(
+        json.dumps(metadata, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
+    ptr.write_text(str(root) + "\n", encoding="utf-8", newline="\n")
+    return ptr
+
+
 def set_pointer(root_str: str) -> Path:
     root = Path(root_str).expanduser().absolute()
     data = _read_sentinel(root)
     _validate(root, data)
-    ptr = user_pointer()
-    ptr.parent.mkdir(parents=True, exist_ok=True)
-    ptr.write_text(str(root) + "\n", encoding="utf-8", newline="\n")
-    return ptr
+    pointer = _write_pointer(root, data["archive_id"])
+    pointer.with_name("write_mode.txt").write_text("hub\n", encoding="utf-8", newline="\n")
+    return pointer
 
 
 def main(argv=None) -> int:

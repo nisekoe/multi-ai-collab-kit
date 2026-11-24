@@ -1,21 +1,16 @@
-# -*- coding: utf-8 -*-
-"""传球门自测：11 项，覆盖每条规则 + 兜底 + 参数缺失。
-跑法：python tools\\test_pass_gate.py
-"""
-from __future__ import annotations
-import os as _os, sys as _sys
-_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
-if _TOOLS not in _sys.path:
-    _sys.path.insert(0, _TOOLS)
-
+"""用本仓库判据表验证传球门 CLI。"""
 import json
+import os
+import shutil
+import tempfile
 import subprocess
 import sys
-import os
+import unittest
+from pathlib import Path
 
-PY = sys.executable
-GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pass_gate.py")
-SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "传球判据.json")
+REPO = Path(__file__).resolve().parents[1]
+GATE = REPO / "tools" / "pass_gate.py"
+SPEC = REPO / "templates" / "传球判据.json"
 
 CASES = [
     # (说明, 参数, 期望退出码, 期望结论关键词)
@@ -33,37 +28,28 @@ CASES = [
 ]
 
 
-def main() -> int:
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+class PassGateTest(unittest.TestCase):
+    def test_release_policy(self):
+        policy = json.loads(SPEC.read_text(encoding="utf-8-sig"))
+        self.assertTrue(policy.get("规则"))
+        self.assertIn("交出去", policy.get("_兜底", ""))
 
-    if not os.path.exists(SPEC):
-        print("FAIL 判据表不存在：" + SPEC)
-        return 1
-    spec = json.loads(open(SPEC, "rb").read().decode("utf-8-sig"))
-    if not spec.get("规则"):
-        print("FAIL 判据表里没有规则")
-        return 1
-    if spec.get("_兜底", "").find("交出去") < 0:
-        print("FAIL 兜底原则不是 fail-closed")
-        return 1
-
-    bad = 0
-    for i, (desc, args, want_code, want_kw) in enumerate(CASES, 1):
-        p = subprocess.run([PY, GATE] + args, capture_output=True)
-        out = p.stdout.decode("utf-8", errors="replace")
-        ok = (p.returncode == want_code) and (want_kw in out)
-        print(("PASS" if ok else "FAIL") + " %2d. %s" % (i, desc))
-        if not ok:
-            bad += 1
-            print("      期望 exit=%s 含『%s』；实际 exit=%s" % (want_code, want_kw, p.returncode))
-            print("      输出尾部：" + out.strip()[-200:])
-
-    print("\n共 %d 项，%d 项通过，%d 项失败" % (len(CASES), len(CASES) - bad, bad))
-    return 0 if bad == 0 else 1
+    def test_cli_cases(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "hub"
+            policy = root / "10-governance" / "守则" / SPEC.name
+            policy.parent.mkdir(parents=True)
+            shutil.copyfile(REPO / "templates" / ".archive-root.json", root / ".archive-root.json")
+            shutil.copyfile(SPEC, policy)
+            env = {**os.environ, "ARCHIVE_ROOT": str(root), "ARCHIVE_ID_EXPECTED": "user-multiagent-hub",
+                   "PROJECT_ROOT": temp, "LOCALAPPDATA": temp, "PYTHONIOENCODING": "utf-8"}
+            for description, args, want_code, want_keyword in CASES:
+                with self.subTest(case=description):
+                    result = subprocess.run([sys.executable, str(GATE), *args], env=env,
+                                            capture_output=True, text=True, encoding="utf-8")
+                    self.assertEqual(result.returncode, want_code, result.stdout + result.stderr)
+                    self.assertIn(want_keyword, result.stdout)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    unittest.main(verbosity=2)

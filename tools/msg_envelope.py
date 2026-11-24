@@ -34,7 +34,7 @@ def addr(leg: str, host: str, session: str) -> str:
 
 def split_addr(value: str) -> dict:
     parts = (value or "").split(ADDR_SEP)
-    if len(parts) != 3:
+    if len(parts) != 3 or any(not part or any(c.isspace() for c in part) for part in parts):
         return {}
     return {"leg": parts[0], "hostId": parts[1], "sessionId": parts[2]}
 
@@ -130,6 +130,31 @@ def parse(text: str) -> dict:
             key = {"任务": "taskId", "消息": "msgId", "回": "replyTo", "发": "from", "收": "to"}[label]
             out.setdefault(key, value)
     return out
+
+
+def for_delivery(text: str, *, to_addr: str, peer_agent: str,
+                 from_addr: str = "", task_id: str = "", msg_id: str = "") -> str:
+    """保留已有合法信封字段，并复验目标。补齐的地址随正文进入会话。"""
+    header = parse(text)
+    if not split_addr(to_addr) or (header.get("to") and header["to"] != to_addr):
+        raise ValueError("信封收件地址与已选窗口不符")
+    if header.get("from") and from_addr and header["from"] != from_addr:
+        raise ValueError("正文已有发件地址，与本次发件地址不同")
+    sender = header.get("from") or from_addr
+    if sender and not split_addr(sender):
+        raise ValueError("发件地址应为 平台|主机|会话")
+    lines = text.strip().splitlines()
+    if lines and ORIGIN_PAT.match(lines[0].strip()):
+        lines = lines[1:]
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    has_fields = any(key in header for key in ("taskId", "msgId", "replyTo", "from", "to"))
+    if lines and HEADER_PAT.match(lines[0].strip()) and has_fields:
+        lines = lines[1:]
+    env = new_envelope(task_id=task_id or header.get("taskId", ""), reply_to=header.get("replyTo", ""),
+                       msg_id=msg_id or header.get("msgId", ""), peer_agent=peer_agent,
+                       from_addr=sender, to_addr=to_addr)
+    return wrap("\n".join(lines).lstrip("\n"), env)
 
 
 def accept_incoming(text: str, seen: dict | None = None) -> dict:

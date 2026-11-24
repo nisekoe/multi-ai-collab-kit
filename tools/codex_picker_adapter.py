@@ -361,6 +361,28 @@ def verify_target(
     return _rollout(snapshot.home, key, thread)
 
 
+def delivery_state(codex_home: Path, thread_id: str) -> tuple[str, int]:
+    """Read optional desktop stores for the last turn and pending queue, without changing them."""
+    turn = ""
+    pending = 0
+    try:
+        with closing(_open_readonly(codex_home / "thread_history_1.sqlite")) as db:
+            row = db.execute(
+                "SELECT status FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1",
+                (thread_id,),
+            ).fetchone()
+            if row:
+                turn = str(row[0] or "")
+    except (OSError, sqlite3.Error):
+        pass
+    try:
+        with closing(_open_readonly(codex_home / "queue_1.sqlite")) as db:
+            pending = db.execute("SELECT count(*) FROM queued_items WHERE thread_id=?", (thread_id,)).fetchone()[0]
+    except (OSError, sqlite3.Error):
+        pass
+    return turn, pending
+
+
 def registration_lines(snapshot: Snapshot) -> list[dict]:
     """Refresh machine fields without transferring human data between addresses."""
     lines = []

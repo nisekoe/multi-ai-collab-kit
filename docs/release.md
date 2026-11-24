@@ -1,49 +1,32 @@
-# 发布与自动更新（维护者视角）
+# 打包、发布与更新
 
-> 客户端脚本：`tools/kit_update.py`；清单示例：`kit-manifest.example.json`。
-> 原则：不静默替换、不绕版本门槛、不留半装状态。
+## 从 Git 跟踪文件生成附件
 
-## 一、发一版要准备什么
-
-1. 打包：把仓库内容打成 `kit-<版本>.zip`。
-2. 算摘要与大小：`sha256` 与字节数写进清单。
-3. 在仓库根放 `kit-manifest.json`（字段见 `kit-manifest.example.json`）：
-
-```json
-{
-  "kit": "multi-ai-collab-kit",
-  "version": "0.3.0",
-  "channel": "stable",
-  "releasedAt": "2026-11-24",
-  "minDsh": "0.4.0",
-  "assets": [{"name": "kit-0.3.0.zip", "sha256": "…", "size": 123456}],
-  "plugins": [],
-  "notes": "一句话说明这版改了什么"
-}
-```
-
-4. 在 GitHub Releases 建同名标签、传 ZIP，并把清单正文贴进发布说明（双份，防 raw 缓存）。
-
-## 二、客户端怎么用
+在源码目录执行以下命令。
 
 ```bash
-python tools/kit_update.py --check                       # 只读：有没有新版
-python tools/kit_update.py --apply --yes                 # 更新（不加 --yes 会先问）
-python tools/kit_update.py --status                      # 本地版本与上次检查时间
-python tools/kit_update.py --rollback                    # 回到上一版
+python tools/make_release.py --version 0.3.3 --out dist --manifest-out kit-manifest.json
 ```
 
-常用参数：`--manifest-url` 指定清单地址、`--install-dir` 指定安装目录、`--dsh-version` 传当前 DSH 版本（用来比 `minDsh`）、`--installed-version` 给没有版本记录的旧安装补一个起点。
+`dist/kit-0.3.3.zip` 依据 Git 跟踪文件打包。`kit-manifest.json` 放在 ZIP 外，记录此附件的实际字节数和 SHA-256。先解包核对模板并跑离线测试，再把同一份 ZIP 上传到对应版本的 Release。核对上传资产后，将外置清单发布到主分支。更新器默认从那里读取它。不要手工修改 ZIP 内文件后沿用旧清单。
 
-## 三、安全边界（脚本里已经这么做）
+## 在解压安装目录外运行更新器
 
-- 只接受 HTTPS 清单与附件；清单大小有上限。
-- 校验两样：附件 `sha256`＋`size`，以及 `minDsh`；任一不符就拒装并说明。
-- 下载到同盘临时目录解包，先跑包内 `--help` 自检，通过后才原子换名。
-- 换名或写版本记录失败会恢复旧目录；始终保留一个上一版备份供回滚。
-- 连不上就安静跳过（每天最多查一次），不刷屏、不重试轰炸。
+以下是 PowerShell 示例。将 `$kitDir` 和 `$dshVersion` 改为实际安装路径和 DSH 版本。每个安装目录使用独立的状态文件。
 
-## 四、还没做的
+```powershell
+$kitDir = (Resolve-Path "C:/tools/multi-ai-collab-kit").Path
+$kitState = Join-Path (Split-Path -Parent $kitDir) "multi-ai-kit-version.json"
+$dshVersion = "0.4.0"
+Set-Location (Split-Path -Parent $kitDir)
+python "$kitDir/tools/kit_update.py" --install-dir "$kitDir" --state-file "$kitState" --check --dsh-version "$dshVersion"
+python "$kitDir/tools/kit_update.py" --install-dir "$kitDir" --state-file "$kitState" --apply --dsh-version "$dshVersion"
+python "$kitDir/tools/kit_update.py" --install-dir "$kitDir" --state-file "$kitState" --status
+python "$kitDir/tools/kit_update.py" --install-dir "$kitDir" --state-file "$kitState" --rollback
+```
 
-- 清单签名（目前是「可信 HTTPS」级别，不做签名校验）。
-- 真实 Release 与隔离 DSH 环境的端到端验收（脚本自带离线模拟测试，见 `tests/test_kit_update.py`）。
+`--check` 只记录检查结果。`--apply` 和 `--rollback` 会询问确认。`--yes` 可用于已确认的操作。如果旧安装没有 `VERSION`，可用 `--installed-version` 指定当前版本。`--manifest-url` 可以指向自管的 HTTPS 清单。
+
+## 检查与回滚
+
+更新器验证 HTTPS、附件大小、SHA-256 和 DSH 最低版本。通过临时目录解包与自检后再切换。上一版留作回滚，从已安装目录之外运行更新和回滚。清单当前通过可信 HTTPS 获取，尚未提供独立签名。离线更新测试见 `tests/test_kit_update.py`。

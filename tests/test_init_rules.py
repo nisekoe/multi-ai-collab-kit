@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(REPO, "tools", "init_rules.py")
@@ -22,7 +23,7 @@ class InitRulesTest(unittest.TestCase):
             fh.write("# 我的工作说明\n\n原有内容保留。\n")
 
     def read(self):
-        return open(self.target, encoding="utf-8").read()
+        return Path(self.target).read_text(encoding="utf-8")
 
     def test_install_idempotent(self):
         self.assertEqual(run("--target", self.target).returncode, 0)

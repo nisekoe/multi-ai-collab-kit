@@ -1,18 +1,32 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "multi-ai-collab-kit"
-version = "0.2.0"
+version = "0.3.3"
 description = "让本机多个已经开着的异构 AI 窗口像同事一样互相派活、接棒、核验的机制层工具"
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "MIT" }
+requires-python = ">=3.10"
+license = "MIT"
 dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/nisekoe/multi-ai-collab-kit"
+
+[project.scripts]
+mack-init-hub = "multi_ai_collab_kit.init_hub:main"
+mack-init-rules = "multi_ai_collab_kit.tools.init_rules:main"
+
+[tool.setuptools]
+packages = ["multi_ai_collab_kit", "multi_ai_collab_kit.tools", "multi_ai_collab_kit.tests"]
+include-package-data = false
+
+[tool.setuptools.package-dir]
+multi_ai_collab_kit = "."
+
+[tool.setuptools.package-data]
+multi_ai_collab_kit = ["VERSION", "rules/core.md", "templates/*", "templates/.archive-root.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]
@@ -20,4 +34,4 @@ python_files = ["test_*.py"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"

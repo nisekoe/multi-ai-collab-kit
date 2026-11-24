@@ -3,7 +3,7 @@
 """把规则正本刷进各客户端的注入层（一段带标记的文本，幂等）。
 
 用法：
-    python tools/init_rules.py --target AGENTS.md          # 写入/更新段落
+    python tools/init_rules.py                             # 写入档案根 AGENTS.md
     python tools/init_rules.py --target AGENTS.md --check   # 只校验，不写
     python tools/init_rules.py --target AGENTS.md --remove  # 撤掉段落
 
@@ -16,9 +16,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import os
 import sys
+from pathlib import Path
+
+if __package__:
+    from . import paths
+else:
+    import paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -28,7 +33,7 @@ END = "<!-- MACK-RULES:END -->"
 
 
 def load_core() -> tuple[str, str]:
-    src = io.open(CORE, encoding="utf-8").read().strip()
+    src = Path(CORE).read_text(encoding="utf-8").strip()
     body = src
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
     return body, digest
@@ -50,13 +55,13 @@ def find_block(text: str) -> tuple[int, int] | None:
 
 def install(target: str, body: str, digest: str) -> int:
     block = render(body, digest)
-    text = io.open(target, encoding="utf-8").read() if os.path.exists(target) else ""
+    text = Path(target).read_text(encoding="utf-8") if os.path.exists(target) else ""
     span = find_block(text)
     if span:
         new = text[:span[0]] + block + text[span[1]:]
     else:
         new = (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
-    io.open(target, "w", encoding="utf-8", newline="\n").write(new)
+    Path(target).write_text(new, encoding="utf-8", newline="\n")
     print(f"已写入：{target}（段落 {digest}）")
     return 0
 
@@ -65,7 +70,7 @@ def check(target: str, body: str, digest: str) -> int:
     if not os.path.exists(target):
         print(f"目标不存在：{target}")
         return 3
-    text = io.open(target, encoding="utf-8").read()
+    text = Path(target).read_text(encoding="utf-8")
     span = find_block(text)
     if not span:
         print("目标里还没有规则段落")
@@ -84,31 +89,36 @@ def remove(target: str) -> int:
     if not os.path.exists(target):
         print(f"目标不存在：{target}")
         return 2
-    text = io.open(target, encoding="utf-8").read()
+    text = Path(target).read_text(encoding="utf-8")
     span = find_block(text)
     if not span:
         print("没有可撤的段落")
         return 0
-    io.open(target, "w", encoding="utf-8", newline="\n").write(text[:span[0]] + text[span[1]:])
+    Path(target).write_text(text[:span[0]] + text[span[1]:], encoding="utf-8", newline="\n")
     print("已撤掉段落")
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="把规则正本刷进注入层")
-    ap.add_argument("--target", required=True, help="要写入的文件，例如 AGENTS.md")
-    ap.add_argument("--check", action="store_true")
-    ap.add_argument("--remove", action="store_true")
+    destination = ap.add_mutually_exclusive_group()
+    destination.add_argument("--target", help="注入到指定文件")
+    destination.add_argument("--root", help="显式档案根，注入到根目录的 AGENTS.md")
+    action = ap.add_mutually_exclusive_group()
+    action.add_argument("--check", action="store_true")
+    action.add_argument("--remove", action="store_true")
     a = ap.parse_args(argv)
-    if not os.path.exists(CORE):
-        print(f"找不到规则正本：{CORE}")
+    try:
+        target = a.target or str(paths.resolve("AGENTS.md", cli_root=a.root, for_write=True))
+        body, digest = load_core()
+        if a.remove:
+            return remove(target)
+        if a.check:
+            return check(target, body, digest)
+        return install(target, body, digest)
+    except (OSError, paths.RootError) as exc:
+        print(f"无法处理规则：{exc}", file=sys.stderr)
         return 2
-    body, digest = load_core()
-    if a.remove:
-        return remove(a.target)
-    if a.check:
-        return check(a.target, body, digest)
-    return install(a.target, body, digest)
 
 
 if __name__ == "__main__":

@@ -162,9 +162,9 @@ def dispatch(candidate: wp.UnifiedCandidate, text: str, peer_agent: str = "deskt
         if cur_cwd != sel_cwd:
             return (wp.EXIT_UNQUALIFIED, {"ok": False, "leg": "codex", "stage": "pre_commit_reverify",
                                           "reason": "cwd_drift"})
-        route = ["reach_gpt.py", "--thread", candidate.id, "--file", "<正文文件>"]
+        route = ["tools/send_codex.py", "--thread", candidate.id, "--confirmed", "--file", "<正文文件>"]
         return (wp.EXIT_OK, {"ok": True, "dry_run": dry_run, "leg": "codex", "verified": True,
-                             "route": route, "note": "pre-commit re-verify passed; deliver via reach_gpt"})
+                             "route": route, "note": "pre-commit re-verify passed; deliver via send_codex"})
     if candidate.leg == "harbor":
         route = ["reach_dsh.py", "--session", candidate.id, "--file", "<正文文件>"]
         return (wp.EXIT_OK, {"ok": True, "dry_run": dry_run, "leg": "harbor",
@@ -173,7 +173,7 @@ def dispatch(candidate: wp.UnifiedCandidate, text: str, peer_agent: str = "deskt
 
 def commit_codex(candidate: wp.UnifiedCandidate, text: str, dry_run: bool = True,
                  expected_cwd=None, registry_path=None) -> tuple[int, dict]:
-    """把选中的 codex 地址真正送到发送入口 reach_gpt（GPT 清单 #5/#6 的落点）。
+    """经统一投递入口提交已复验的 Codex 地址。
 
     选中地址经 --thread 传入；reach_gpt 在实际提交前（:566）复用同一
     codex_picker_adapter.default_workspace_allowed 工作区授权＋cwd 漂移校验。
@@ -203,7 +203,7 @@ def commit_codex(candidate: wp.UnifiedCandidate, text: str, dry_run: bool = True
     if cur_cwd != sel_cwd:
         return (wp.EXIT_UNQUALIFIED, {"ok": False, "leg": "codex", "stage": "commit_reverify",
                                       "reason": "cwd_drift", "note": "选窗时工作区与发送入口当前不符"})
-    reach = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reach_gpt.py")
+    reach = os.path.join(os.path.dirname(os.path.abspath(__file__)), "send_codex.py")
     tmp = None
     result_tmp = None
     try:
@@ -213,7 +213,7 @@ def commit_codex(candidate: wp.UnifiedCandidate, text: str, dry_run: bool = True
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as rf:
             result_tmp = rf.name
         nonce = uuid.uuid4().hex
-        cmd = [sys.executable, reach, "--thread", candidate.id, "--file", tmp,
+        cmd = [sys.executable, reach, "--thread", candidate.id, "--confirmed", "--file", tmp,
                "--nonce", nonce, "--registry", str(reg),  # pinned 登记册贯穿桥子进程（GPT复审#4）
                "--result-file", result_tmp]  # 机器结果独立通道（GPT桥复审#5：回复文本不可污染状态）
         eff_cwd = expected_cwd if expected_cwd is not None else candidate.cwd
@@ -244,9 +244,11 @@ def commit_codex(candidate: wp.UnifiedCandidate, text: str, dry_run: bool = True
         reason = str(machine.get("reason") or "")
         payload = {"ok": rc == 0, "leg": "codex", "dry_run": dry_run, "exit": rc,
                    "nonce": nonce, "output": out[-800:],
-                   "note": "selected address -> reach_gpt send entry; shared workspace auth at :566"}
+                   "note": "已选地址经统一入口提交，保留发送前工作区复验"}
         if isinstance(machine.get("landed"), bool):
             payload["landed_hint"] = machine["landed"]
+        if "resultKnown" in machine:
+            payload.update(status=machine.get("status"), resultKnown=machine["resultKnown"])
         if reason:
             payload["reason"] = reason  # 结构化拒绝：编排层按 reason 分流权威/瞬时
         elif rc != 0:

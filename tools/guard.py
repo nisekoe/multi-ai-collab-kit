@@ -47,7 +47,7 @@ import time
 
 PROJECT = os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOLS = os.path.join(PROJECT, "tools")
-GIT = shutil.which("git") or (r"C:\Program Files\Git\cmd\git.exe" if os.path.exists(r"C:\Program Files\Git\cmd\git.exe") else "git")
+GIT = os.environ.get("KIT_GIT") or shutil.which("git") or "git"
 
 import archive_paths  # noqa: E402
 _WM = archive_paths.write_mode()
@@ -158,16 +158,16 @@ def external_drift(files=None, store: str | None = None) -> list[dict]:
     return out
 
 DB_MAP = {
-    "memory": r"astrbot\data\plugin_data\astrbot_plugin_memory_companion\memory_companion.db",
-    "companion": r"astrbot\data\plugin_data\astrbot_plugin_private_companion\installations\main\runtime\companion-v2.sqlite3",
-    "data_v4": r"astrbot\data\data_v4.db",
+    "memory": "KIT_GUARD_MEMORY_DB",
+    "companion": "KIT_GUARD_COMPANION_DB",
+    "data_v4": "KIT_GUARD_STATE_DB",
 }
 
 # 代码/配置：只另存「本轮真改过」的那些，限制条数与体积
 CODE_WATCH = (
     os.path.join(PROJECT, "tools"),
-    os.path.join(PROJECT, "astrbot", "data", "config"),
-    os.path.join(PROJECT, "astrbot", "data", "plugins"),
+    os.path.join(PROJECT, "config"),
+    os.path.join(PROJECT, "plugins"),
 )
 CODE_SKIP_SUFFIX = (".bak", ".log", ".db", ".sqlite3", ".wav", ".zstd", ".pyc")
 CODE_MAX_FILES = 400
@@ -528,11 +528,15 @@ def cmd_undo(args) -> int:
 
 
 def cmd_db(args) -> int:
-    rel = DB_MAP.get(args.name)
-    if rel is None:
-        print(f"不认识的库名 {args.name!r}；可选：{', '.join(DB_MAP)}")
+    setting = DB_MAP.get(args.name)
+    if setting is None:
+        print(f"不认识的库名 {args.name!r}，可选：{', '.join(DB_MAP)}")
         return 2
-    src = os.path.join(PROJECT, rel)
+    src = os.environ.get(setting)
+    if not src:
+        print(f"请用 {setting} 指定 {args.name} 的 SQLite 文件。")
+        return 2
+    src = os.path.expanduser(src)
     if not os.path.exists(src):
         print(f"库不存在：{src}")
         return 2
@@ -547,7 +551,11 @@ def cmd_db(args) -> int:
     finally:
         dst_con.close()
         src_con.close()
-    check = sqlite3.connect(dst).execute("pragma quick_check").fetchone()[0]
+    check_db = sqlite3.connect(dst)
+    try:
+        check = check_db.execute("pragma quick_check").fetchone()[0]
+    finally:
+        check_db.close()
     print(f"库快照：{dst}")
     print(f"大小 {os.path.getsize(dst):,} 字节｜quick_check={check}｜{_now()}")
     return 0 if check == "ok" else 1

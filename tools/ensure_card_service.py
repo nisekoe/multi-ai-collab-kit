@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -32,7 +33,8 @@ LOG = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
 
 def alive(timeout: float = 2.0) -> bool:
     try:
-        urllib.request.urlopen(BASE + "/api/pending", timeout=timeout).read()
+        with urllib.request.urlopen(BASE + "/api/pending", timeout=timeout) as response:
+            response.read()
         return True
     except Exception:
         return False
@@ -62,7 +64,10 @@ def ensure(wait: float = 8.0) -> tuple[bool, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ok, detail = ensure()
+    parser = argparse.ArgumentParser(description="确保本机选窗卡片服务可用")
+    parser.add_argument("--wait", type=float, default=8.0, help="等待服务启动的秒数")
+    args = parser.parse_args(argv)
+    ok, detail = ensure(args.wait)
     payload = {"ok": ok, "detail": detail, "base": BASE}
     print(json.dumps(payload, ensure_ascii=False))
     return 0 if ok else 1

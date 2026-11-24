@@ -39,6 +39,7 @@ import argparse
 import io
 import json
 import os
+import shutil
 import sys
 import time
 
@@ -270,7 +271,7 @@ def guard_hint() -> str:
     import subprocess
     import archive_paths as ap
     repo = str(ap.old_root()) if ap.write_mode() == "old" else str(ap.paths.resolve_root(for_write=True)[0])
-    git = r"C:\Program Files\Git\cmd\git.exe"
+    git = os.environ.get("KIT_GIT") or shutil.which("git") or "git"
     try:
         if not _os.path.isdir(_os.path.join(repo, ".git")):
             return ""

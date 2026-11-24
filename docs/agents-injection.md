@@ -1,42 +1,24 @@
-# 把规则贴进你的 AI（三种客户端）
+# 安装共享规则
 
-> 正本：`rules/core.md`；安装器：`tools/init_rules.py`。
-
-> 规则正本是 `rules/core.md`。改完正本跑一次安装器，它会往目标文件里写一段**带标记**的文本；重复跑不会重复写，`--check` 能查漂移。
-
-## 一、先看你要贴给谁
-
-| 客户端 | 贴到哪 | 说明 |
-|---|---|---|
-| DSH（桌面/工程） | 工作区根的 `AGENTS.md` | 每轮自动注入；建议直接指向这个仓库 |
-| Codex（CLI / 桌面） | 你的 Codex 全局 `AGENTS.md`，或项目根的 `AGENTS.md` | 全局文件对所有会话生效，项目文件只对该目录生效 |
-| Antigravity（IDE） | 项目里的 `AGENTS.md` 或它自带的规则入口 | 多数版本会读项目根的同名文件 |
-
-## 二、三步贴上
+规则正文在 `rules/core.md`。初始化档案根后，在工具目录执行以下命令。
 
 ```bash
-python tools/init_rules.py --target AGENTS.md          # 写进去
-python tools/init_rules.py --target AGENTS.md --check   # 核对有没有漂移
+python tools/init_rules.py
+python tools/init_rules.py --check
 ```
 
-第三件：把 `docs/card-service.md` 里的卡片服务按 `docs/setup-card-service.md` 起起来——规则里的“需要人选窗口时走卡片”才有东西可走。
+默认写入绑定档案根的 `AGENTS.md`。指定另一个档案根用 `--root <档案根>`，向实际客户端注入文件写入可用 `--target <文件>`。将该文件配置到客户端工作区或客户端自己的规则入口。
 
-## 三、以后规则变了怎么办
+## 同步变化
 
-手动版：改 `rules/core.md`，重跑安装器。
-
-自动版（推荐）：`python tools/rules_watch.py --watch --target AGENTS.md`——正本一变就自动刷；没变时只做校验，发现目标被手改会报漂移。
-
-1. 改 `rules/core.md`；
-2. 重新跑一次安装器（同一个命令，会替换旧段落）；
-3. `--check` 显示“与正本一致”即可。
-
-不要手改目标文件里那一段——下次安装会覆盖；要加本地补充，写在标记段落**之外**。
-
-## 四、撤掉
+正本改动后可重跑安装器。需要持续监视时，请把示例路径换成实际文件。
 
 ```bash
-python tools/init_rules.py --target AGENTS.md --remove
+python tools/rules_watch.py --watch --target "./my-hub/AGENTS.md"
 ```
 
-只删标记段落，不动文件里的其他内容。
+正本变更会同步。只改目标里的标记块时，监视器会报告漂移。确认要恢复时执行 `python tools/init_rules.py --target "./my-hub/AGENTS.md"`，然后加 `--check` 核验。自己的补充写在标记块外。
+
+## 撤销
+
+`python tools/init_rules.py --remove` 移除绑定根规则文件里的标记块。指定过其他目标时带上同一个 `--target`。

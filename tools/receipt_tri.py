@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""投递回执三态：refused / queued / consumed / unknown。
+"""投递回执四态：refused / queued / consumed / unknown。
 
 为什么需要
     「退出码 0」和「HTTP accepted=true」都只说明传输层收下了，不说明对方读到。
@@ -37,14 +37,14 @@ def judge(*, exit_code: int = 0, accepted: bool | None = None, landed: bool | No
           reply: bool = False, error: str | None = None, timeout: bool = False,
           reason: str = "") -> tuple[str, str]:
     """把一次投递的事实压成 (状态, 依据)。参数都只描述「看到了什么」。"""
+    if landed is True:
+        return "consumed", ("正文已进入目标会话" + ("，且出现了新回复" if reply else ""))
     if timeout:
         return "unknown", reason or "timeout：没等到回执"
     if error:
         return "refused", f"拒绝证据：{error}"
     if accepted is False:
         return "refused", reason or "传输层明确未受理"
-    if landed is True:
-        return "consumed", ("正文已进入目标会话" + ("，且出现了新回复" if reply else ""))
     if landed is False and accepted:
         return "queued", reason or "传输层已受理，但未在目标会话里看到正文"
     if exit_code in (4, 5, 6):
@@ -69,9 +69,16 @@ def log(leg: str, target: str, state: str, reason: str, **extra) -> None:
 
 def say(state: str, reason: str) -> str:
     """给人看的一行。"""
-    label = {"refused": "被拒", "queued": "已排队（对方尚未读到）",
+    label = {"refused": "被拒", "queued": "已受理（尚无进入会话的证据）",
              "consumed": "已送达（进入对方会话）", "unknown": "结果未知"}.get(state, state)
     return f"回执：{label}｜{reason}"
+
+
+def report(leg: str, target: str, **facts) -> dict:
+    state, reason = judge(**facts)
+    log(leg, target, state, reason)
+    print(say(state, reason))
+    return {"status": None if state == "unknown" else state, "resultKnown": state != "unknown"}
 
 
 if __name__ == "__main__":

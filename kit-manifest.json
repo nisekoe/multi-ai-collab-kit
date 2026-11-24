@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "channel": "stable",
   "releasedAt": "2026-11-24",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.3.2.zip",
-      "sha256": "73994360b343936e9f7dd4cbf10b04b68bc9f8769c840b26d63744e65aa89d2a",
-      "size": 354254
+      "name": "kit-0.3.3.zip",
+      "sha256": "9e299d9ca6339bf853708a01fed2a282f78dad14c2ab72979c921c3190f455fb",
+      "size": 369383
     }
   ],
   "plugins": [],
-  "notes": "修复：移除误提交的本机规则状态文件；默认路径便携化；投递闸文档与代码对齐；插件安装说明更正；备份工具缺来源时跳过"
+  "notes": "补齐模板、初始化与安装，接通选窗、投递闸及四态回执"
 }

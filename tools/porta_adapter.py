@@ -35,6 +35,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+import msg_envelope
+import receipt_tri
+
 # ── 统一退出码（对齐 v1.0 §6） ──────────────────────────────────────────────
 EXIT_OK = 0
 EXIT_ENV = 2                  # 环境或桥异常（Porta 不可达 / 无存活 LS / 协议解析错）
@@ -568,6 +571,7 @@ class PortaAdapter:
             truncated=truncated,
             meta={
                 "stepCount": int(raw.get("stepCount") or 0),
+                "createdTime": str(raw.get("createdTime") or ""),
                 "projectName": project_name,
                 "projectId": project_id,
                 "trajectoryId": str(raw.get("trajectoryId") or ""),
@@ -1064,7 +1068,28 @@ class PortaAdapter:
             "hasReply": bool(reply_text),
         }
 
-    def deliver(
+    def deliver(self, conv_id: str, text: str, **options) -> Tuple[int, Dict[str, Any]]:
+        code, info = self._deliver_impl(conv_id, text, **options)
+        if options.get("dry_run"):
+            info.update(status=None, resultKnown=False)
+            return code, info
+
+        http = info.get("http") or 0
+        landed = bool(info.get("matchedBodyFingerprint"))
+        stage = info.get("stage")
+        rejected = stage in {"validate", "binding_check", "final_reverify", "envelope_check"}
+        rejected = rejected or (stage == "verify_target" and code != EXIT_ENV)
+        rejected = rejected or (400 <= http < 500 and http != 408)
+        info.update(receipt_tri.report(
+            "porta", conv_id, landed=landed, accepted=True if 200 <= http < 300 else None,
+            reply=bool(info.get("replyStepIndex") is not None),
+            error=info.get("reason") if rejected else None, reason=info.get("reason") or "",
+        ))
+        if landed:
+            info["verified"] = True
+        return code, info
+
+    def _deliver_impl(
         self,
         conv_id: str,
         text: str,
@@ -1095,18 +1120,16 @@ class PortaAdapter:
 
         # 投前现查绑定：有新窗口出现时不许默认继续投旧窗（2026-11-24 口径）
         _binding = (binding if binding is not None else os.environ.get("PORTA_BINDING", "")).strip()
-        if not dry_run:
-            try:
-                rows = [{"id": c.id, "last": c.lastActivity or ""} for c in (er.candidates or [])]
-                rows.sort(key=lambda r: r["last"], reverse=True)
-                chk = binding_verdict(_binding, conv_id, rows)
-                if not chk.get("ok"):
-                    return EXIT_TARGET_INVALID, {"ok": False, "code": EXIT_TARGET_INVALID,
-                                                 "stage": "binding_check", "reason": chk.get("reason"),
-                                                 "newer": chk.get("newer"), "convId": conv_id,
-                                                 "leg": self.LEG, "at": _iso_stamp(self._now())}
-            except Exception:
-                pass
+        rows = [{"id": c.id, "last": c.meta.get("createdTime") or c.lastActivity or ""}
+                for c in er.candidates if c.reachable]
+        rows.sort(key=lambda row: row["last"], reverse=True)
+        chk = binding_verdict(_binding, conv_id, rows)
+        if not chk["ok"]:
+            return EXIT_TARGET_INVALID, {
+                "ok": False, "code": EXIT_TARGET_INVALID, "stage": "binding_check",
+                "reason": chk["reason"], "newer": chk.get("newer"), "convId": conv_id,
+                "leg": self.LEG, "at": _iso_stamp(self._now()),
+            }
 
         vr = self.verify_target(
             conv_id,
@@ -1154,18 +1177,14 @@ class PortaAdapter:
                 return EXIT_TARGET_INVALID, {"ok": False, "code": EXIT_TARGET_INVALID, "stage": "final_reverify",
                                               "reason": "cwd_drift", "detail": "POST前快照工作区已漂移", "leg": self.LEG,
                                               "convId": conv_id, "at": _iso_stamp(self._now())}
-        _addr = (from_addr if from_addr is not None else os.environ.get("KIT_FROM_ADDR", "")).strip()
-        _text = text
-        if _addr:
-            try:
-                import msg_envelope as _ME
-                _env = _ME.new_envelope(from_addr=_addr,
-                                        to_addr=_ME.addr("porta", "local", conv_id),
-                                        peer_agent=peer_agent)
-                _text = _ME.wrap(text, _env)
-            except Exception:
-                _text = text
-        wrapped = wrap_origin_idempotent(_text, peer_agent)
+        sender = (from_addr if from_addr is not None else os.environ.get("KIT_FROM_ADDR", "")).strip()
+        try:
+            wrapped = msg_envelope.for_delivery(text, from_addr=sender,
+                                                to_addr=msg_envelope.addr(self.LEG, cand.hostId, cand.id),
+                                                peer_agent=peer_agent)
+        except ValueError as exc:
+            return EXIT_TARGET_INVALID, {"ok": False, "stage": "envelope_check", "reason": "invalid_envelope",
+                                         "detail": str(exc), "convId": cand.id, "leg": self.LEG}
         body_fp = extract_body_fingerprint(wrapped)
         cid = new_client_message_id()
         pre_step = int(cand.meta.get("stepCount") or 0)

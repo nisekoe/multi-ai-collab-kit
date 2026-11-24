@@ -8,33 +8,24 @@
 
 ---
 
-## 选窗与投递（2026-11 增补）
+## 选窗与投递
 
-多平台协作里最容易出事的不是「能不能发」，而是「发给谁、发没发到」。这一版补了两件事：
+- Codex 发送统一走 `tools/send_codex.py`。可以现场选窗、复用任务选择或按完整回程地址回复。
+- 选窗卡片使用本机 `tools/card_service.py`。配置和预演见 [卡片服务接入](docs/setup-card-service.md)。
+- 回执保存为 `refused`、`queued`、`consumed` 或 `unknown`。只有正文进入目标会话的证据才算送达。检查项目见 [投递闸覆盖范围](docs/gate-coverage.md)。
 
-- **统一选窗卡片**：不绑定任何平台，本地小服务在右下角弹卡，用户点名字，编号留在工具层。见 `docs/card-service.md`。
-- **部署**：卡片服务要常驻并接线到规则，步骤见 `docs/setup-card-service.md`；不接线，规则会退化回口头问。
-- **投递闸与回程地址**：每条消息自带发起方地址；对方按地址回；同一任务选定即记住；出现新窗口才重新确认；送达分 refused／queued／consumed 三态。规则在 `GOVERNANCE.md` 第五层，Codex 端约束见 `docs/codex-delivery.md`。
+## 快速开始
 
-工具入口：`run_tests.py`（离线测试）、`init_hub.py`（一键建库）、`card_service.py`（选窗卡片）、`guard.py`（退路门）；扩展阅读：`docs/hooks.md`（客户端 Hook 门禁）、`docs/throttle.md`（跨窗节流）。
-
-## 快速开始（两分钟）
+下载 [Release 附件](https://github.com/nisekoe/multi-ai-collab-kit/releases)并解压，或从 Git 克隆。使用 Python 3.10+，在工具目录执行以下命令。
 
 ```bash
-git clone https://github.com/nisekoe/multi-ai-collab-kit.git
-cd multi-ai-collab-kit
-
-python run_tests.py                 # 全部离线测试（沙盒根，不碰你的真实档案）
-python init_hub.py D:\my-hub        # 建六区骨架、绑指针、跑自检
-python tools/init_rules.py --target AGENTS.md   # 把规则正本刷进你的注入层
-python tools/rules_watch.py --watch --target AGENTS.md   # 可选：正本一变自动刷
+python run_tests.py
+python init_hub.py ./my-hub
+python tools/init_rules.py --root ./my-hub
+python tools/channel_params.py
 ```
 
-最后一条会打印一段话，把它贴进你的 AI 注入层（`AGENTS.md` 或等价位置）即可。
-
-需要人选窗口时再启动常驻卡片服务：`python tools/card_service.py`（接线步骤见 `docs/setup-card-service.md`）。
-
----
+新档案根里已生成六区、配置模板、账本和角色临时本子。最后一条只检查配置，可以在没有客户端、账号和口令时执行。若已有其他档案根的指针，按 [SETUP.md](SETUP.md) 设置当前目录所用的根。
 
 ## 一、系统局限性与免责声明（四项边界）
 
@@ -58,7 +49,7 @@ python tools/rules_watch.py --watch --target AGENTS.md   # 可选：正本一变
 | 层级 | 核心职责 | 包内对应模块 / 资产 | 状态与你的操作 |
 | :--- | :--- | :--- | :--- |
 | **第一层·判据层** | 什么时候停、什么时候交 | `guard.py`（可逆判据＋三红线）、`pass_gate.py`＋`传球判据.json`（传球门五问）、`comm_gate.py`（节奏闸防踩踏）、`plan_gate.py`（方案门禁） | ✅ **已含**：脚本与判据模板齐备 |
-| **第二层·脚本层** | 把规矩变成强制动作，不靠自觉 | `safe_write.py`（唯一文本写口）、`ledger_lock.py`（账本锁）、`handoff_lint.py`（四字段门禁）、`closeout.py`（收工唯一入口）、`sync_check.py`、`origin_envelope.py`、`delivery_receipt.py`、`picker*.py`、三桥接腿、`backup_all.py` | ✅ **已含**：48 个 `.py` 机制脚本与测试齐备 |
+| **第二层·脚本层** | 把规矩变成强制动作，不靠自觉 | `safe_write.py`（唯一文本写口）、`ledger_lock.py`（账本锁）、`handoff_lint.py`（四字段门禁）、`closeout.py`（收工唯一入口）、`sync_check.py`、`origin_envelope.py`、`delivery_receipt.py`、`picker*.py`、三桥接腿、`backup_all.py` | ✅ **已含**：机制脚本与隔离测试 |
 | **第三层·指针层** | 东西放哪、零硬编码寻根 | `paths.py`（4 级寻根）、`archive_paths.py`（六区映射）、`.archive-root.json`（哨兵）、`入口.md`（收工与开工总指针）、`通道.json` 等配置正本 | ⚙️ **模板已含**：需按 Quickstart 在你的工作根目录建好六区骨架与 `入口.md` |
 | **第四层·共用规则层** | AI 每轮开工要读的纪律与注入指令 | 五条硬约束、`AGENTS.md`（每轮注入纪律＋开工先跑 `comm_gate`）、三红线/四字段/单写者/收尾铁律 | 🛠️ **需按你环境立起**：提供 `templates/AGENTS.md` 与 [GOVERNANCE.md](GOVERNANCE.md) 供你与 AI 助手裁剪注入 |
 
@@ -84,65 +75,14 @@ python tools/rules_watch.py --watch --target AGENTS.md   # 可选：正本一变
 
 ---
 
-## 四、5 分钟快速上手（Quickstart）
+## 四、接入你使用的客户端
 
-> 详细环境准备与「哪些现成可用 / 哪些需自备」请先看 [SETUP.md](SETUP.md) 与 [GOVERNANCE.md](GOVERNANCE.md)。
+1. `python tools/paths.py --write` 显示当前绑定的档案根。`python tools/pass_gate.py --demo` 可检查刚装好的判据。
+2. 编辑档案根下的 `_state/通道.json`，把示例端口换成实际端口。凭据放到库外目录，见 [环境接入指南](SETUP.md)。
+3. 将档案根的 `AGENTS.md` 配置到实际使用的客户端。用 `python tools/init_rules.py --check` 核对其规则。需要同步别处的文件时，用 `--target` 指定实际注入文件。
+4. 先验证本机配置和离线用例。接好宿主后，再按 [卡片接入指南](docs/setup-card-service.md) 运行选窗预演。Codex 预演会复验目标并显示加好信封的正文。
 
-### 第 1 步：下载并搭建本地六区工作根目录与入口骨架
-将本仓库下载或克隆到本地任意目录，再新建一个用于存放运行态配置、账本与指针的工作根目录（例如 `my-hub`）：
-
-```bash
-# 1. 创建六区目录骨架（含守则、账本与各角色 scratch 目录）
-mkdir -p my-hub/_state my-hub/00-config my-hub/10-governance/守则 my-hub/10-governance/ledger
-mkdir -p my-hub/20-projects/demo-alpha my-hub/30-roles/planner_bot my-hub/30-roles/review_bot my-hub/30-roles/coder_bot my-hub/90-archive
-
-# 2. 复制哨兵、根入口指针、共用纪律模板与 4 套核心配置模板
-cp templates/.archive-root.json my-hub/.archive-root.json
-cp templates/入口.md            my-hub/入口.md
-cp templates/AGENTS.md          my-hub/AGENTS.md
-cp templates/通道.json          my-hub/_state/通道.json
-cp templates/传球判据.json      my-hub/10-governance/守则/传球判据.json
-cp templates/窗口登记模板.json  my-hub/00-config/active_projects.json
-
-# 3. 初始化空白账本与角色临时本子（供 closeout.py / ledger_lock.py 串联对账）
-touch my-hub/10-governance/ledger/工作台结果.md my-hub/10-governance/ledger/待处理事项.md
-touch my-hub/30-roles/planner_bot/scratch.md my-hub/30-roles/review_bot/scratch.md my-hub/30-roles/coder_bot/scratch.md
-```
-
-### 第 2 步：设置环境变量（零硬编码寻根）
-```powershell
-# Windows PowerShell 示例
-$env:ARCHIVE_ROOT = "$PWD\my-hub"
-# 可选：自定义受保护工作区关键词（逗号分隔），选窗器会自动预排除
-$env:PROTECTED_WORKSPACES = "protected-workspace,private-zone"
-```
-
-### 第 3 步：填入通道配置与库外口令
-编辑 `my-hub/_state/通道.json` 中的 `host` / `port` / `session_cwd`；真实口令**不要写进仓库**，而是放进库外凭据目录（默认 `%LOCALAPPDATA%\agent-archive\secrets\`，可用 `ARCHIVE_SECRETS_DIR` 指定）。并将 `my-hub/AGENTS.md` 中的共用纪律注入你所使用的各 AI 客户端。
-
-### 第 4 步：跑自检（零真投）
-```bash
-# 1) 验证寻根与哨兵
-python paths.py
-
-# 2) 验证 ORIGIN 信任头与交接四字段门禁
-python tools/handoff_lint.py --demo
-
-# 3) 验证传球门（fail-closed 判据表）
-python tools/pass_gate.py --demo
-
-# 4) 验证统一选窗器与智能调度层核心离线单测
-python test_window_picker.py
-python test_picker_ranker.py
-python test_project_slots.py
-python test_stage3_lifecycle_handoff.py
-```
-
-### 第 5 步：只读预演投递（`--dry-run`）
-```bash
-# 模拟解析目标并查看将要注入的 ORIGIN 信封（不会真的发消息）
-python tools/reach_dsh.py --origin review_bot --dry-run --text "示例预演消息"
-```
+也可在虚拟环境安装 Python 工具。`python -m pip install .` 完成后，可以从其他目录运行 `mack-init-hub` 和 `mack-init-rules`。Harbor 插件使用源码仓库或 Release 附件中的 `plugins/`。
 
 ---
 

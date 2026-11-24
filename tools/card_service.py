@@ -30,7 +30,7 @@ CARD_DIR = Path(os.environ.get("CARD_DIR")
                 or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / ".multi-ai-collab-kit" / "cards"))
 IS_WINDOWS = os.name == "nt"
 HOST = "127.0.0.1"  # 卡片服务没有鉴权，固定只听本机；端口可用 CARD_PORT 改
-PORT = int(os.environ.get("CARD_PORT", "8790"))
+DEFAULT_PORT = 8790
 _inbox: "queue.Queue[dict]" = queue.Queue()
 
 BG = "#FAFBFD"
@@ -506,9 +506,11 @@ def popups() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="系统级选窗卡片服务")
-    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--port", type=int, default=os.environ.get("CARD_PORT", str(DEFAULT_PORT)))
     ap.add_argument("--no-popup", action="store_true")
     a = ap.parse_args()
+    if not 1 <= a.port <= 65535:
+        ap.error("--port 或 CARD_PORT 必须在 1–65535 之间")
     CARD_DIR.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=serve, args=(a.port,), daemon=True).start()
     print(f"卡片服务 http://{HOST}:{a.port}/", flush=True)
