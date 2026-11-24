@@ -26,12 +26,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import codex_draft
+
 CARD_DIR = Path(os.environ.get("CARD_DIR")
                 or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / ".multi-ai-collab-kit" / "cards"))
 IS_WINDOWS = os.name == "nt"
 HOST = "127.0.0.1"  # 卡片服务没有鉴权，固定只听本机；端口可用 CARD_PORT 改
 DEFAULT_PORT = 8790
-_inbox: "queue.Queue[dict]" = queue.Queue()
+_inbox: "queue.Queue[tuple[dict, str]]" = queue.Queue()
 
 BG = "#FAFBFD"
 FG = "#1E293B"
@@ -102,6 +104,22 @@ def _norm(data: dict) -> list[dict]:
 
 def _flat(groups: list[dict]) -> list[dict]:
     return [o for g in groups for o in g["options"]]
+
+
+def _answer_on_desktop(rec: dict, idx: int, draft_prompt: str) -> None:
+    current = _read(rec["id"])
+    if rec.get("status") != "pending" or not current or current.get("status") != "pending":
+        return
+    rec.update(status="answered", choice=idx, answered=time.strftime("%Y-%m-%d %H:%M:%S"))
+    option = rec["flat"][idx]
+    if option.get("action") == "new_window" and draft_prompt:
+        try:
+            codex_draft.request_draft(str(option.get("cwd") or ""), draft_prompt)
+        except (OSError, ValueError):
+            rec["desktop_draft_requested"] = False
+        else:
+            rec["desktop_draft_requested"] = True
+    _write(rec)
 
 
 def _soft_shadow(hwnd: int) -> None:
@@ -225,7 +243,10 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(400, b'{"error":"bad json"}')
         if self.path.startswith("/api/request"):
-            qid = data.get("id") or ("c" + secrets.token_hex(4))
+            draft_prompt = data.get("codex_draft_prompt", "")
+            if not isinstance(draft_prompt, str) or (draft_prompt and not codex_draft.prompt_fits(draft_prompt)):
+                return self._send(400, b'{"error":"invalid desktop draft"}')
+            qid = ("c" + secrets.token_hex(12)) if draft_prompt else (data.get("id") or ("c" + secrets.token_hex(4)))
             groups = _norm(data)
             rec = {"id": qid, "title": data.get("title") or "选哪一个？",
                    "subtitle": data.get("subtitle") or data.get("question") or "",
@@ -233,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
                    "asker": data.get("asker") or "", "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "status": "pending", "choice": None}
             _write(rec)
-            _inbox.put(rec)
+            _inbox.put((rec, draft_prompt))
             return self._send(200, json.dumps({"id": qid}, ensure_ascii=False).encode())
         if self.path.startswith("/api/answer"):
             qid = str(data.get("id") or "")
@@ -275,12 +296,11 @@ def popups() -> int:
     stack: list[tk.Toplevel] = []
     live: dict[str, tk.Toplevel] = {}
 
-    def answer(rec: dict, idx: int, win: tk.Toplevel):
-        rec.update(status="answered", choice=idx, answered=time.strftime("%Y-%m-%d %H:%M:%S"))
-        _write(rec)
+    def answer(rec: dict, idx: int, win: tk.Toplevel, draft_prompt: str):
+        _answer_on_desktop(rec, idx, draft_prompt)
         _fade_close(win, stack)
 
-    def build(rec: dict):
+    def build(rec: dict, draft_prompt: str):
         win = tk.Toplevel(root)
         win.withdraw()
         win.overrideredirect(True)
@@ -358,17 +378,24 @@ def popups() -> int:
 
             for k, o in visible:
                 row_top = y
-                lab = canvas.create_text(pad + 14, row_top + 11, text=o.get("label") or "", fill=FG,
+                raw_lab = " ".join(str(o.get("label") or "").split())
+                if len(raw_lab) > 64:
+                    raw_lab = raw_lab[:63].rstrip() + "…"
+                lab = canvas.create_text(pad + 14, row_top + 11, text=raw_lab, fill=FG,
                                          font=f_opt, anchor="nw", width=inner_w - 28)
                 y = canvas.bbox(lab)[3] + 5
                 tags = o.get("tags") or []
+                if isinstance(tags, str):
+                    tags = [tags]
                 if tags:
                     tx = pad + 14
                     for t in tags[:4]:
                         tbg, tfg = _tag_colors(str(t))
                         _, _, tx = pill(tx, y, str(t), tbg, tfg)
                     y += 24
-                desc = o.get("description") or ""
+                desc = " ".join(str(o.get("description") or "").split())
+                if len(desc) > 96:
+                    desc = desc[:95].rstrip() + "…"
                 if desc:
                     dt = canvas.create_text(pad + 14, y, text=desc, fill=SUB, font=f_desc,
                                             anchor="nw", width=inner_w - 28)
@@ -388,7 +415,7 @@ def popups() -> int:
                 if multi:
                     canvas.tag_bind(tag, "<Button-1>", lambda e, qq=q, i=k: pick(qq, i))
                 else:
-                    canvas.tag_bind(tag, "<Button-1>", lambda e, r=rec, i=k, w=win: answer(r, i, w))
+                    canvas.tag_bind(tag, "<Button-1>", lambda e, r=rec, i=k, w=win: answer(r, i, w, draft_prompt))
                 canvas.tag_bind(tag, "<Enter>", lambda e, iid=rid: (canvas.config(cursor="hand2"), canvas.itemconfig(iid, outline="#748FFC", width=2)))
                 canvas.tag_bind(tag, "<Leave>", lambda e, qq=q, i=k, iid=rid, ro=row_outline: (canvas.config(cursor=""),
                                 canvas.itemconfig(iid, **({"fill": ROW_HOVER, "outline": "#5C7CFA", "width": 2} if sel.get(qq) == i else {"fill": ROW, "outline": ro, "width": 1}))))
@@ -439,9 +466,14 @@ def popups() -> int:
         canvas.tag_bind(close_id, "<Leave>", lambda e: (canvas.itemconfig(close_id, fill="#64748B"), canvas.config(cursor="")))
         y += 38
 
-        w, h = W, int(y)
-        canvas.config(width=w, height=h)
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        total_h = int(y)
+        max_h = max(320, int(sh * 0.78))
+        w, h = W, min(total_h, max_h)
+        canvas.config(width=w, height=h)
+        if total_h > max_h:
+            canvas.config(scrollregion=(0, 0, w, total_h))
+            canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
         yy = sh - h - 120 - sum(x.winfo_height() + 10 for x in stack)
         xx = sw - w - 24
         win.geometry(f"{w}x{h}+{max(0, xx)}+{max(0, yy) + 14}")
@@ -450,33 +482,25 @@ def popups() -> int:
         except Exception:
             pass
         win.deiconify()
+        win.update_idletasks()
         _round_region(win.winfo_id(), w, h)
         _soft_shadow(win.winfo_id())
         try:
             win.lift()
             win.attributes("-topmost", True)
+            win.attributes("-alpha", 0.98)
+            win.geometry(f"{w}x{h}+{max(0, xx)}+{max(0, yy)}")
             ctypes.windll.user32.SetWindowPos(win.winfo_id(), -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
         except Exception:
             pass
-        steps = 9
-
-        def _step(i: int = 1):
-            try:
-                win.attributes("-alpha", min(0.98, 0.05 + 0.93 * i / steps))
-                win.geometry(f"{w}x{h}+{max(0, xx)}+{max(0, yy) + int(14 * (1 - i / steps))}")
-            except Exception:
-                return
-            if i < steps:
-                win.after(22, lambda: _step(i + 1))
-
-        win.after(10, _step)
+        print(f"POPUP_BUILT id={rec.get('id','')} geom={w}x{h}+{max(0,xx)}+{max(0,yy)} screen={sw}x{sh}", flush=True)
         stack.append(win)
         live[rec.get("id", "")] = win
 
     def poll():
         try:
             while True:
-                build(_inbox.get_nowait())
+                build(*_inbox.get_nowait())
         except queue.Empty:
             pass
         except Exception:

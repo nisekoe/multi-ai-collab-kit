@@ -963,6 +963,18 @@ def _register_created_window(reg_path: str, thread_id: str, cwd: str, title: str
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
+def new_window_body(raw_body: str, *, from_addr: str = "", task_id: str = "") -> str:
+    match = re.search(r"peer_agent=([A-Za-z0-9_\-]+)", ORIGIN_LINE)
+    envelope = msg_envelope.new_envelope(
+        task_id=task_id,
+        from_addr=from_addr or None,
+        to_addr=f"codex|{LOCAL_HOST_ID}|new",
+        reply_to=from_addr or None,
+        peer_agent=match.group(1) if match else "desktop_bot",
+    )
+    return msg_envelope.wrap(raw_body, envelope)
+
+
 def create_and_send(
     cwd: str,
     raw_body: str,
@@ -1023,18 +1035,7 @@ def create_and_send(
             print("REASON=registry_invalid")
             return finish(2, "registry_invalid", error="registry_invalid")
 
-    peer = "desktop_bot"
-    m = re.search(r"peer_agent=([A-Za-z0-9_\-]+)", ORIGIN_LINE)
-    if m:
-        peer = m.group(1)
-    env = msg_envelope.new_envelope(
-        task_id=task_id,
-        from_addr=from_addr or None,
-        to_addr=f"codex|{LOCAL_HOST_ID}|new",
-        reply_to=from_addr or None,
-        peer_agent=peer,
-    )
-    body = msg_envelope.wrap(raw_body, env)
+    body = new_window_body(raw_body, from_addr=from_addr, task_id=task_id)
 
     try:
         codex = find_codex()
@@ -1043,7 +1044,7 @@ def create_and_send(
         print("REASON=transport_unavailable")
         return finish(2, "transport_unavailable", error="transport_unavailable")
 
-    cmd = [codex, "exec", "--json", "-C", work, "--skip-git-repo-check", body]
+    cmd = [codex, "exec", "--json", "-C", work, "--skip-git-repo-check", "-"]
     if dry_run:
         print(f"[dry-run] 将在目录新建 Codex 窗口并发送：{work}")
         print(f"[dry-run] 命令：{' '.join(cmd[:6])} <body:{len(body)} chars>")
@@ -1054,7 +1055,7 @@ def create_and_send(
     t0 = time.time()
     timed_out = False
     try:
-        r = subprocess.run(cmd, cwd=work, capture_output=True, text=True,
+        r = subprocess.run(cmd, cwd=work, input=body, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=SYNC_TIMEOUT)
         rc, out, err = r.returncode, r.stdout or "", r.stderr or ""
     except subprocess.TimeoutExpired as exc:
@@ -1065,7 +1066,9 @@ def create_and_send(
             out = raw_out.decode("utf-8", "replace")
         else:
             out = raw_out or ""
-        err = f"timeout {SYNC_TIMEOUT}s"
+        raw_err = exc.stderr or ""
+        decoded_err = raw_err.decode("utf-8", "replace") if isinstance(raw_err, bytes) else raw_err
+        err = f"{decoded_err[-700:]}\ntimeout {SYNC_TIMEOUT}s"
     except OSError as exc:
         print(f"无法启动 Codex：{exc}")
         return finish(2, "transport_unavailable", error="transport_unavailable")

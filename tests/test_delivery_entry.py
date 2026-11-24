@@ -46,7 +46,10 @@ class CardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         choice = getattr(self.server, "answer_choice", 1)
-        self.reply({"status": "answered", "choice": choice})
+        payload = {"status": "answered", "choice": choice}
+        if hasattr(self.server, "desktop_draft_requested"):
+            payload["desktop_draft_requested"] = self.server.desktop_draft_requested
+        self.reply(payload)
 
 
 class DeliveryEntryTest(unittest.TestCase):
@@ -179,16 +182,49 @@ class DeliveryEntryTest(unittest.TestCase):
         self.assertEqual(groups[1]["options"][-1]["action"], "new_window")
         self.assertEqual(groups[1]["options"][-1]["cwd"], str(self.workspace))
 
-    def test_card_pick_new_window_creates_registers_and_reuses_task(self):
+    def test_card_pick_new_window_opens_desktop_draft_and_explicit_new_registers(self):
+        # 1. 卡片点「新建」：宿主未确认打开草稿时拒绝回退后台
+        with ThreadingHTTPServer(("127.0.0.1", 0), CardHandler) as server:
+            server.answer_choice = 2
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with mock.patch.dict(os.environ, {"CARD_PORT": str(server.server_port)}):
+                    code, output = self.invoke("--ask", "--new-cwd", str(self.workspace),
+                                               "--task", "new-win-task", "--card-timeout", "3")
+            finally:
+                server.shutdown()
+                worker.join(timeout=3)
+        self.assertEqual(code, 5, output)
+        self.assertIn("desktop_draft_not_confirmed", output)
+        self.transport.assert_not_called()
+
+        # 2. 卡片点「新建」：宿主确认打开前台草稿时返回 0，不悄悄跑后台 exec
+        with ThreadingHTTPServer(("127.0.0.1", 0), CardHandler) as server:
+            server.answer_choice = 2
+            server.desktop_draft_requested = True
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with mock.patch.dict(os.environ, {"CARD_PORT": str(server.server_port)}):
+                    code, output = self.invoke("--ask", "--new-cwd", str(self.workspace),
+                                               "--task", "new-win-task", "--card-timeout", "3")
+            finally:
+                server.shutdown()
+                worker.join(timeout=3)
+        self.assertEqual(code, 0, output)
+        self.assertIn("desktop_draft_requested", output)
+        self.transport.assert_not_called()
+
+        # 3. 显式 --new：走后台 codex exec (stdin 传正文)，登记 created_by_kit 并支持 --task 复用
         created_id = "dddddddd-0000-4000-8000-000000000004"
 
         def fake_exec_new(command, **kwargs):
             self.assertEqual(command[1:4], ["exec", "--json", "-C"])
             self.assertEqual(command[4], str(self.workspace))
-            self.assertEqual(command[5], "--skip-git-repo-check")
-            body = command[6]
+            self.assertEqual(command[5:7], ["--skip-git-repo-check", "-"])
+            body = kwargs.get("input") or ""
             self.assertEqual(msg_envelope.parse(body)["from"], SENDER)
-            # 模拟 Codex 写入 rollout 与 state_5.sqlite (source='exec')
             path = self.home / "sessions" / f"rollout-fixture-{created_id}.jsonl"
             path.write_text(json.dumps({"type": "session_meta", "payload": {"id": created_id}}) + "\n", encoding="utf-8")
             os.utime(path, (time.time() - 180, time.time() - 180))
@@ -203,21 +239,10 @@ class DeliveryEntryTest(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
         self.transport.side_effect = fake_exec_new
-        with ThreadingHTTPServer(("127.0.0.1", 0), CardHandler) as server:
-            server.answer_choice = 2  # 第三项：会话区末尾的「＋ 在无项目分类新建窗口并发送」
-            worker = threading.Thread(target=server.serve_forever, daemon=True)
-            worker.start()
-            try:
-                with mock.patch.dict(os.environ, {"CARD_PORT": str(server.server_port)}):
-                    code, output = self.invoke("--ask", "--new-cwd", str(self.workspace),
-                                               "--task", "new-win-task", "--card-timeout", "3")
-            finally:
-                server.shutdown()
-                worker.join(timeout=3)
+        code, output = self.invoke("--new", "--new-cwd", str(self.workspace), "--task", "new-win-task")
         self.assertEqual(code, 0, output)
         self.assertEqual(self.last_receipt()["state"], "consumed")
         self.assertEqual(self.last_receipt()["target"], created_id)
-        # 登记册已写入 created_by_kit=True，后续 --task 复用放行
         reg_data = json.loads(Path(reach_gpt.REG).read_text(encoding="utf-8"))
         self.assertTrue(any(r.get("thread_id") == created_id and r.get("created_by_kit") for r in reg_data["lines"]))
         code, output = self.invoke("--task", "new-win-task", "--dry-run")
