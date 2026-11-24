@@ -206,6 +206,39 @@ def codex_registry_path(cli_root=None, cwd=None, for_write: bool = True) -> Path
     return primary
 
 
+def card_port(default: int = 8790) -> int:
+    """解析选窗卡片服务端口：环境变量 CARD_PORT ＞ _state/通道.json 的 card_port ＞ 默认 8790。"""
+    env_val = (os.environ.get("CARD_PORT") or "").strip()
+    if env_val:
+        try:
+            port = int(env_val)
+        except ValueError as exc:
+            raise ValueError(f"CARD_PORT 无效：{env_val}") from exc
+        if not 1 <= port <= 65535:
+            raise ValueError(f"CARD_PORT 必须在 1–65535 之间：{port}")
+        return port
+    channel_file = os.environ.get("DSH_CHANNEL_FILE")
+    candidates: list[Path] = []
+    if channel_file:
+        candidates.append(Path(channel_file))
+    else:
+        try:
+            candidates.append(resolve("_state/通道.json", for_write=False))
+        except RootError:
+            pass
+    for p in candidates:
+        if p.is_file():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8-sig"))
+                if isinstance(data, dict) and data.get("card_port") is not None:
+                    port = int(data["card_port"])
+                    if 1 <= port <= 65535:
+                        return port
+            except (OSError, ValueError, TypeError):
+                pass
+    return default
+
+
 def _write_pointer(root: Path, archive_id: str) -> Path:
     ptr = user_pointer()
     ptr.parent.mkdir(parents=True, exist_ok=True)

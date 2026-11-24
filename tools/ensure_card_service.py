@@ -21,8 +21,12 @@ import time
 import urllib.request
 from pathlib import Path
 
-BASE = "http://127.0.0.1:%s" % os.environ.get("CARD_PORT", "8790")
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+import paths  # noqa: E402
+
+BASE = "http://127.0.0.1:%d" % paths.card_port()
 PYW = Path(sys.executable).with_name("pythonw.exe") if os.name == "nt" else Path(sys.executable)
 if not PYW.is_file():
     PYW = Path(sys.executable)

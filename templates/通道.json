@@ -1,5 +1,6 @@
 {
-  "_note": "互通通道配置模板：请复制到你的 <ARCHIVE_ROOT>/_state/通道.json 并按本机实际地址填写。凭据请放在库外 secrets_dir（不要把真实 token 提交到 Git）。",
+  "_note": "互通通道配置模板：请复制到你的 <ARCHIVE_ROOT>/_state/通道.json 并按本机实际地址填写。凭据请放在库外 secrets_dir（不要把真实 token 提交到 Git）。card_port 为本机选窗卡片默认端口（仅监听 127.0.0.1），可用环境变量 CARD_PORT 临时覆盖。",
+  "card_port": 8790,
   "desktop_bot": {
     "host": "127.0.0.1",
     "port": 18097,

@@ -5,7 +5,7 @@
 在仓库根目录执行（`--version` 需与 `VERSION` 文件一致）：
 
 ```bash
-python tools/make_release.py --version 0.4.0 --out dist --manifest-out kit-manifest.json
+python tools/make_release.py --version 0.5.0 --out dist --manifest-out kit-manifest.json
 ```
 
 `dist/kit-<版本>.zip` 按 Git 跟踪文件列表打包，自动排除 `.git`、`__pycache__`、`dist` 等目录。`kit-manifest.json` 生成在 ZIP 之外，记录附件的实际字节数与 SHA-256 校验值。

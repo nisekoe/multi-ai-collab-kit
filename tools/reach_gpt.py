@@ -90,6 +90,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -848,6 +849,262 @@ def main(argv=None, *, selected=False, confirmed=False, from_addr="", task_id=""
              "正文进了": bool(landed), "reply_ts": ts, "reply_head": (reply or "")[:120]})
     machine["landed"] = bool(landed)
     return done(0, "delivered_verified") if ok else done(5, "not_landed")
+
+
+def _parse_new_exec_events(stdout: str) -> tuple[str, bool, str]:
+    """解析 `codex exec --json` 的 JSONL 输出，提取 (thread_id, completed, reply_text)。"""
+    thread_id = ""
+    completed = False
+    reply_text = ""
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if not thread_id:
+            tid = obj.get("thread_id") or obj.get("session_id")
+            if isinstance(tid, str) and tid.strip():
+                thread_id = tid.strip()
+        ev_type = str(obj.get("type") or "")
+        if ev_type in ("turn.completed", "task_complete"):
+            completed = True
+        item = obj.get("item") if isinstance(obj.get("item"), dict) else {}
+        if item.get("type") == "agent_message" and isinstance(item.get("text"), str):
+            reply_text = item["text"]
+            completed = True
+        elif isinstance(obj.get("last_agent_message"), str) and obj["last_agent_message"]:
+            reply_text = obj["last_agent_message"]
+            completed = True
+    return thread_id, completed, reply_text
+
+
+def _extract_user_message_texts(obj: dict) -> list[str]:
+    """从 rollout JSONL 的单条记录里只提取用户角色（role=user）的解码正文，绝不匹配助手消息。"""
+    texts: list[str] = []
+    ev_type = str(obj.get("type") or "")
+    payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+    if ev_type == "response_item" and payload.get("type") == "message" and payload.get("role") == "user":
+        content = payload.get("content")
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            parts = [str(part.get("text")) for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)]
+            if parts:
+                texts.append("\n".join(parts))
+                texts.append("".join(parts))
+    elif ev_type == "event_msg" and payload.get("type") == "user_message":
+        msg = payload.get("message") or payload.get("text")
+        if isinstance(msg, str):
+            texts.append(msg)
+    return texts
+
+
+def _new_thread_landed(thread_id: str, body: str) -> bool:
+    """核对目标新建会话的 rollout 文件里，是否存在 role=user 且与完整正文一致的消息记录。"""
+    if not thread_id or not (body or "").strip():
+        return False
+    sessions_dir = Path(CODEX_HOME) / "sessions"
+    if not sessions_dir.is_dir():
+        return False
+    want = body.replace("\r\n", "\n").strip()
+    for path in sessions_dir.rglob(f"*{thread_id}*.jsonl"):
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        meta_id = ""
+        matched_user = False
+        for row_text in raw.splitlines():
+            row_text = row_text.strip()
+            if not row_text or not row_text.startswith("{"):
+                continue
+            try:
+                obj = json.loads(row_text)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("type") == "session_meta" and isinstance(obj.get("payload"), dict):
+                mid = obj["payload"].get("id")
+                if isinstance(mid, str) and mid.strip():
+                    meta_id = mid.strip()
+            for text in _extract_user_message_texts(obj):
+                norm = text.replace("\r\n", "\n").strip()
+                if norm == want or want in norm:
+                    matched_user = True
+        if matched_user and (not meta_id or meta_id == thread_id):
+            return True
+    return False
+
+
+def _register_created_window(reg_path: str, thread_id: str, cwd: str, title: str) -> None:
+    """把工具新建的 Codex 窗口记入登记册并标 created_by_kit=True；不覆盖已损坏登记册。"""
+    p = Path(reg_path)
+    if p.exists():
+        data = picker._register(p)
+    else:
+        data = {"lines": []}
+    lines = [row for row in data.get("lines", []) if not (isinstance(row, dict) and row.get("thread_id") == thread_id)]
+    lines.append({
+        "hostId": LOCAL_HOST_ID,
+        "thread_id": thread_id,
+        "title": title,
+        "cwd": cwd,
+        "created_by_kit": True,
+        "created_at": _stamp(),
+    })
+    data["lines"] = lines
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def create_and_send(
+    cwd: str,
+    raw_body: str,
+    *,
+    dry_run: bool = False,
+    from_addr: str = "",
+    task_id: str = "",
+    nonce: str = "",
+    result_file: str = "",
+    registry: str | None = None,
+) -> tuple[int, str]:
+    """在指定工作目录新建一个 Codex 窗口并发送首条消息。返回 (exit_code, new_thread_id)。"""
+    raw_cwd = _plain(cwd)
+    work = str(Path(raw_cwd).expanduser().resolve()) if raw_cwd else ""
+
+    def write_result(state: dict, code: int, reason: str, tid: str = "") -> None:
+        if not result_file:
+            return
+        payload = {
+            **state, "nonce": nonce, "thread": tid, "mode": "new",
+            "cwd": work, "exit": code, "reason": reason,
+        }
+        try:
+            Path(result_file).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except OSError as exc:
+            print(f"无法写入机器结果：{exc}", file=sys.stderr)
+
+    def finish(code: int, reason: str, tid: str = "", *, landed=None, accepted=None, error=None) -> tuple[int, str]:
+        state = {"status": None, "resultKnown": False}
+        if not dry_run:
+            state = receipt_tri.report(
+                "codex", tid or f"new:{work}",
+                landed=landed, accepted=accepted, error=error, reason=reason,
+            )
+        write_result(state, code, reason, tid)
+        return code, tid
+
+    if not (raw_body or "").strip():
+        print("正文为空，拒绝新建窗口发送。")
+        print("REASON=empty_body")
+        return finish(2, "empty_body", error="empty_body")
+
+    if not work or not os.path.isdir(work):
+        print(f"新建窗口目录不存在：{work or '(空)'}")
+        print("REASON=cwd_not_found")
+        return finish(6, "cwd_not_found", error="cwd_not_found")
+    if not picker.default_workspace_allowed((LOCAL_HOST_ID, ""), work):
+        print(f"受保护工作区禁止新建窗口：{work}")
+        print("REASON=workspace_protected")
+        return finish(6, "workspace_protected", error="workspace_protected")
+
+    reg_target = registry or REG
+    if Path(reg_target).exists():
+        try:
+            picker._register(Path(reg_target))
+        except Exception as exc:  # noqa: BLE001
+            print(f"登记册损坏，拒绝新建并覆盖：{exc}")
+            print("REASON=registry_invalid")
+            return finish(2, "registry_invalid", error="registry_invalid")
+
+    peer = "desktop_bot"
+    m = re.search(r"peer_agent=([A-Za-z0-9_\-]+)", ORIGIN_LINE)
+    if m:
+        peer = m.group(1)
+    env = msg_envelope.new_envelope(
+        task_id=task_id,
+        from_addr=from_addr or None,
+        to_addr=f"codex|{LOCAL_HOST_ID}|new",
+        reply_to=from_addr or None,
+        peer_agent=peer,
+    )
+    body = msg_envelope.wrap(raw_body, env)
+
+    try:
+        codex = find_codex()
+    except RuntimeError as exc:
+        print(exc)
+        print("REASON=transport_unavailable")
+        return finish(2, "transport_unavailable", error="transport_unavailable")
+
+    cmd = [codex, "exec", "--json", "-C", work, "--skip-git-repo-check", body]
+    if dry_run:
+        print(f"[dry-run] 将在目录新建 Codex 窗口并发送：{work}")
+        print(f"[dry-run] 命令：{' '.join(cmd[:6])} <body:{len(body)} chars>")
+        print(body[:400])
+        write_result({"status": None, "resultKnown": False, "dryRun": True}, 0, "dry_run", "")
+        return 0, ""
+
+    t0 = time.time()
+    timed_out = False
+    try:
+        r = subprocess.run(cmd, cwd=work, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=SYNC_TIMEOUT)
+        rc, out, err = r.returncode, r.stdout or "", r.stderr or ""
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        rc = -1
+        raw_out = exc.stdout if exc.stdout is not None else exc.output
+        if isinstance(raw_out, bytes):
+            out = raw_out.decode("utf-8", "replace")
+        else:
+            out = raw_out or ""
+        err = f"timeout {SYNC_TIMEOUT}s"
+    except OSError as exc:
+        print(f"无法启动 Codex：{exc}")
+        return finish(2, "transport_unavailable", error="transport_unavailable")
+
+    cost = time.time() - t0
+    new_tid, completed, reply = _parse_new_exec_events(out)
+    rollout_landed = _new_thread_landed(new_tid, body) if new_tid else False
+    landed = bool(new_tid and (rollout_landed or (rc == 0 and completed)))
+    ok = (not timed_out) and rc == 0 and bool(new_tid) and completed
+    if new_tid and (ok or landed):
+        first_line = next((ln.strip() for ln in raw_body.splitlines() if ln.strip()), "新建协作窗口")
+        try:
+            _register_created_window(reg_target, new_tid, work, first_line[:60])
+        except Exception as exc:  # noqa: BLE001
+            print(f"新窗口已创建（{new_tid}），但写入登记册失败：{exc}", file=sys.stderr)
+
+    print(f"\nmode=new exit={rc}  {cost:.1f}s｜新会话：{new_tid or '(未解析)'}｜落盘：{landed}｜完成：{completed}")
+    if reply:
+        print("\n--- GPT 的回复 ---")
+        print(reply.strip()[:3000])
+    elif not ok:
+        print((err or out).strip()[-800:])
+
+    receipt({
+        "at": _stamp(), "ok": ok, "mode": "new", "thread": new_tid,
+        "cwd": work, "chars": len(body), "exit": rc, "seconds": round(cost, 1),
+        "nonce": nonce, "body_sha1": hashlib.sha1(body.encode("utf-8")).hexdigest(),
+        "正文进了": landed, "reply_head": (reply or "")[:120],
+    })
+    if ok:
+        return finish(0, "delivered_verified", new_tid, landed=True, accepted=True)
+    if landed:
+        reason = "timeout_after_landed" if timed_out else ("turn_failed_after_landed" if rc != 0 else "delivered_running")
+        return finish(5, reason, new_tid, landed=True, accepted=True)
+    if timed_out:
+        return finish(5, "timeout", "")
+    if rc != 0:
+        return finish(5, "exec_failed", "", error=f"exit_{rc}")
+    return finish(5, "not_landed", "")
 
 
 if __name__ == "__main__":

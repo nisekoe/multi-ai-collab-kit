@@ -64,7 +64,7 @@ python tools/channel_params.py
 | `ARCHIVE_ID_EXPECTED` | 哨兵校验期望的 `archive_id` | `user-multiagent-hub` |
 | `ARCHIVE_SECRETS_DIR` | 库外凭据目录（放 `.txt` 口令文件） | `%LOCALAPPDATA%\agent-archive\secrets` |
 | `DSH_CHANNEL_FILE` | 覆盖 `通道.json` 路径 | `<工作根>/_state/通道.json` |
-| `CARD_DIR` / `CARD_PORT` | 选窗卡片数据目录与端口 | Windows 优先 `%LOCALAPPDATA%/.multi-ai-collab-kit/cards`，否则 `~/.multi-ai-collab-kit/cards`；端口 `8790` |
+| `CARD_DIR` / `CARD_PORT` | 选窗卡片数据目录和端口（端口优先级：`CARD_PORT` ＞ `_state/通道.json` 的 `card_port` ＞ 默认 `8790`） | Windows 优先 `%LOCALAPPDATA%/.multi-ai-collab-kit/cards`，否则 `~/.multi-ai-collab-kit/cards`；端口 `8790` |
 | `DELIVERY_HISTORY` | 四态投递历史文件 | 与卡片目录同级的 `投递历史.jsonl` |
 | `KIT_CODEX_BIN` / `CODEX_HOME` | Codex 二进制与本机会话存储 | PATH 或 Windows 桌面端默认位置；存储默认 `~/.codex` |
 | `PORTA_BASE` | IDE 端本地 Porta 服务地址 | `http://127.0.0.1:3170` |

@@ -40,11 +40,13 @@ class CardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        self.server.ids = [row["id"] for row in data["groups"][0]["options"]]
+        self.server.groups = data.get("groups") or []
+        self.server.ids = [row["id"] for g in self.server.groups for row in g.get("options", [])]
         self.reply({"id": "fixture-card"})
 
     def do_GET(self):
-        self.reply({"status": "answered", "choice": 1})
+        choice = getattr(self.server, "answer_choice", 1)
+        self.reply({"status": "answered", "choice": choice})
 
 
 class DeliveryEntryTest(unittest.TestCase):
@@ -121,8 +123,9 @@ class DeliveryEntryTest(unittest.TestCase):
             worker.start()
             try:
                 with mock.patch.dict(os.environ, {"CARD_PORT": str(server.server_port)}):
-                    code, output = self.invoke("--ask", "--task", "fixture", "--mode", "sync", "--card-timeout", "3")
-                self.assertEqual(server.ids, [FIRST, SECOND])
+                    code, output = self.invoke("--ask", "--new-cwd", str(self.workspace),
+                                               "--task", "fixture", "--mode", "sync", "--card-timeout", "3")
+                self.assertEqual(server.ids, [FIRST, SECOND, f"{send_codex.NEW_OPTION_PREFIX}{self.workspace}"])
             finally:
                 server.shutdown()
                 worker.join(timeout=3)
@@ -156,6 +159,97 @@ class DeliveryEntryTest(unittest.TestCase):
         code, output = self.invoke("--reply-to", f"codex|local|{FIRST}", "--mode", "sync")
         self.assertEqual(code, 0, output)
         self.assertEqual(self.last_receipt()["state"], "consumed")
+
+    def test_grouped_card_has_new_window_option_in_every_group(self):
+        proj_dir = self.workspace / "proj-alpha"
+        proj_dir.mkdir()
+        with contextlib.closing(sqlite3.connect(self.state_db)) as db, db:
+            db.execute("CREATE TABLE projects (id, name, metadata)")
+            db.execute("CREATE TABLE project_roots (project_id, path)")
+            db.execute("INSERT INTO projects VALUES ('p1', 'AlphaProj', '{}')")
+            db.execute("INSERT INTO project_roots VALUES ('p1', ?)", (str(proj_dir),))
+            db.execute("UPDATE threads SET cwd = ? WHERE id = ?", (str(proj_dir), FIRST))
+        snap = reach_gpt.read_snapshot()
+        groups = send_codex._candidate_groups(snap, default_new_cwd=str(self.workspace), include_new=True)
+        self.assertEqual([g["kind"] for g in groups], ["project", "session"])
+        self.assertEqual(groups[0]["title"], "项目 · AlphaProj")
+        self.assertEqual(groups[0]["options"][-1]["action"], "new_window")
+        self.assertEqual(groups[0]["options"][-1]["cwd"], str(proj_dir))
+        self.assertEqual(groups[1]["title"], "会话区（无项目分类）")
+        self.assertEqual(groups[1]["options"][-1]["action"], "new_window")
+        self.assertEqual(groups[1]["options"][-1]["cwd"], str(self.workspace))
+
+    def test_card_pick_new_window_creates_registers_and_reuses_task(self):
+        created_id = "dddddddd-0000-4000-8000-000000000004"
+
+        def fake_exec_new(command, **kwargs):
+            self.assertEqual(command[1:4], ["exec", "--json", "-C"])
+            self.assertEqual(command[4], str(self.workspace))
+            self.assertEqual(command[5], "--skip-git-repo-check")
+            body = command[6]
+            self.assertEqual(msg_envelope.parse(body)["from"], SENDER)
+            # 模拟 Codex 写入 rollout 与 state_5.sqlite (source='exec')
+            path = self.home / "sessions" / f"rollout-fixture-{created_id}.jsonl"
+            path.write_text(json.dumps({"type": "session_meta", "payload": {"id": created_id}}) + "\n", encoding="utf-8")
+            os.utime(path, (time.time() - 180, time.time() - 180))
+            with contextlib.closing(sqlite3.connect(self.state_db)) as db, db:
+                db.execute("INSERT INTO threads VALUES (?, 'NewExec', 'NewExec', ?, 'exec', 0, ?, ?)",
+                           (created_id, str(self.workspace), time.time() - 180, str(path)))
+            stdout = "\n".join([
+                json.dumps({"type": "thread.started", "thread_id": created_id}),
+                json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "hello from new"}}),
+                json.dumps({"type": "turn.completed"}),
+            ]) + "\n"
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        self.transport.side_effect = fake_exec_new
+        with ThreadingHTTPServer(("127.0.0.1", 0), CardHandler) as server:
+            server.answer_choice = 2  # 第三项：会话区末尾的「＋ 在无项目分类新建窗口并发送」
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with mock.patch.dict(os.environ, {"CARD_PORT": str(server.server_port)}):
+                    code, output = self.invoke("--ask", "--new-cwd", str(self.workspace),
+                                               "--task", "new-win-task", "--card-timeout", "3")
+            finally:
+                server.shutdown()
+                worker.join(timeout=3)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.last_receipt()["state"], "consumed")
+        self.assertEqual(self.last_receipt()["target"], created_id)
+        # 登记册已写入 created_by_kit=True，后续 --task 复用放行
+        reg_data = json.loads(Path(reach_gpt.REG).read_text(encoding="utf-8"))
+        self.assertTrue(any(r.get("thread_id") == created_id and r.get("created_by_kit") for r in reg_data["lines"]))
+        code, output = self.invoke("--task", "new-win-task", "--dry-run")
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"codex|local|{created_id}", output)
+
+    def test_new_window_blocks_protected_workspace_and_supports_dry_run(self):
+        protected = self.workspace / "protected-workspace"
+        protected.mkdir()
+        code, output = self.invoke("--new", "--new-cwd", str(protected))
+        self.assertEqual(code, 6, output)
+        self.assertIn("workspace_protected", output)
+        self.assertEqual(self.last_receipt()["state"], "refused")
+        self.transport.assert_not_called()
+
+        code, output = self.invoke("--new", "--new-cwd", str(self.workspace), "--dry-run")
+        self.assertEqual(code, 0, output)
+        self.assertIn("[dry-run]", output)
+        self.transport.assert_not_called()
+
+    def test_card_port_three_tier_priority(self):
+        import paths
+        ch = self.hub / "_state" / "通道.json"
+        ch.parent.mkdir(parents=True, exist_ok=True)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CARD_PORT", None)
+            os.environ.pop("DSH_CHANNEL_FILE", None)
+            self.assertEqual(paths.card_port(), 8790)
+            ch.write_text(json.dumps({"card_port": 18799}), encoding="utf-8")
+            self.assertEqual(paths.card_port(), 18799)
+            os.environ["CARD_PORT"] = "18888"
+            self.assertEqual(paths.card_port(), 18888)
 
     def test_queue_acceptance_and_transport_timeout_are_distinct(self):
         with mock.patch.object(reach_gpt, "QUEUE_WAIT", 0):

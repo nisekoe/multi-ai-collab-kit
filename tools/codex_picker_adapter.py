@@ -158,6 +158,79 @@ def _project_of(cat_pid, cwd, name_by_pid, roots) -> str:
     return best
 
 
+def project_groups(snapshot: Snapshot) -> tuple[dict, list, dict]:
+    """返回 Codex 桌面项目索引 (name_by_pid, proj_roots, roots_by_pid)，供选窗分组复用。"""
+    name_by_pid: dict = {}
+    proj_roots: list = []
+    roots_by_pid: dict[str, list[str]] = {}
+    try:
+        with closing(_open_readonly(snapshot.home / "state_5.sqlite")) as con:
+            for row in con.execute("SELECT id, name, metadata FROM projects"):
+                pid, name = row["id"], row["name"]
+                if not name:
+                    continue
+                name_by_pid[pid] = name
+                try:
+                    meta = json.loads(row["metadata"] or "{}")
+                    backing = json.loads(meta.get("codex.chatGptBacking", "{}"))
+                    gpid = backing.get("projectId")
+                    if gpid:
+                        name_by_pid[gpid] = name
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            for row in con.execute("SELECT project_id, path FROM project_roots"):
+                pid = row["project_id"]
+                nm = name_by_pid.get(pid)
+                rp = row["path"]
+                if nm and rp:
+                    proj_roots.append((rp, nm, pid))
+                    roots_by_pid.setdefault(pid, []).append(rp)
+    except (OSError, ValueError, sqlite3.Error):
+        pass
+    return name_by_pid, proj_roots, roots_by_pid
+
+
+def project_of_thread(
+    snapshot: Snapshot,
+    key: Address,
+    name_by_pid: dict,
+    proj_roots: list,
+    roots_by_pid: dict | None = None,
+) -> tuple[str, str, str]:
+    """返回某条会话的 (project_key, project_name, project_root_cwd)；无项目归属时返回 ('', '', '')。"""
+    thread = snapshot.threads.get(key) or {}
+    cat = snapshot.catalog.get(key) or {}
+    cwd = thread.get("cwd") or cat.get("cwd") or ""
+    cat_pid = cat.get("project_id") or ""
+    cw = _norm_path(cwd)
+    sep = chr(92)
+
+    if cat_pid and cat_pid in name_by_pid:
+        proj_name = name_by_pid[cat_pid]
+        matched_root = ""
+        best_len = -1
+        for rp in (roots_by_pid or {}).get(cat_pid, []):
+            nrp = _norm_path(rp)
+            if nrp and cw and (cw == nrp or cw.startswith(nrp + sep)) and len(nrp) > best_len:
+                matched_root, best_len = rp, len(nrp)
+        if not matched_root:
+            pid_roots = (roots_by_pid or {}).get(cat_pid, [])
+            matched_root = pid_roots[0] if pid_roots else cwd
+        return f"pid:{cat_pid}", proj_name, matched_root
+
+    best_name, best_root, best_pid, best_len = "", "", "", -1
+    for item in proj_roots:
+        rp, nm = item[0], item[1]
+        pid = item[2] if len(item) > 2 else ""
+        nrp = _norm_path(rp)
+        if nrp and cw and (cw == nrp or cw.startswith(nrp + sep)) and len(nrp) > best_len:
+            best_name, best_root, best_pid, best_len = nm, rp, pid, len(nrp)
+    if not best_name:
+        return "", "", ""
+    proj_key = f"pid:{best_pid}" if best_pid else f"root:{_norm_path(best_root)}"
+    return proj_key, best_name, best_root
+
+
 @dataclass
 class Snapshot:
     host_id: str
@@ -354,7 +427,9 @@ def verify_target(
     if thread.get("archived"):
         return VerifiedTarget("archived")
     if (thread.get("source") or "").casefold() == "exec":
-        return VerifiedTarget("source_exec")
+        binding = snapshot.bindings.get(key) or {}
+        if not binding.get("created_by_kit"):
+            return VerifiedTarget("source_exec")
     cwd = thread.get("cwd") or ""
     if workspace_allowed is not None and (not cwd or not workspace_allowed(key, cwd)):
         return VerifiedTarget("workspace_protected")
@@ -394,7 +469,7 @@ def registration_lines(snapshot: Snapshot) -> list[dict]:
         alias, legacy = old.get("alias") or "", _legacy_alias(old)
         verdict = verify_target(snapshot, key)
         updated, _ = _activity(snapshot, key)
-        lines.append({
+        entry = {
             "leg": key[0], "hostId": key[1], "thread_id": key[2],
             "alias": alias, "legacy_alias": legacy, "display_title": title,
             "别名": alias or legacy or title,  # legacy presentation field, never identity
@@ -405,7 +480,10 @@ def registration_lines(snapshot: Snapshot) -> list[dict]:
             "unusableReason": verdict.reason,
             "cwd": thread.get("cwd") or cat.get("cwd") or "",
             "最后活动": updated,
-        })
+        }
+        if old.get("created_by_kit"):
+            entry["created_by_kit"] = True
+        lines.append(entry)
     return lines
 
 

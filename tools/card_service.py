@@ -79,6 +79,8 @@ def _tag_colors(text: str) -> tuple[str, str]:
         return "#FFEBEB", "#C92A2A"
     if any(k in t for k in ("跑", "占用", "忙", "running", "冲突")):
         return "#FFF4DC", "#AD5A00"
+    if any(k in t for k in ("新建", "new")):
+        return "#E6FCF5", "#0B7285"
     if any(k in t for k in ("最近", "新鲜", "活跃", "idle", "空闲")):
         return "#E8F7EF", "#16794F"
     if any(k in t for k in ("项目", "proj")):
@@ -342,7 +344,19 @@ def popups() -> int:
             canvas.create_text(W - pad, y + 9, text=f"{n} 条", fill=SUB, font=f_desc, anchor="e")
             y += 34
 
-            for o in (g.get("options") or [])[:MAX_PER_GROUP]:
+            raw_opts = g.get("options") or []
+            indexed = [(flat_idx + i, o) for i, o in enumerate(raw_opts)]
+            if len(indexed) > MAX_PER_GROUP:
+                last_opt = indexed[-1][1]
+                if last_opt.get("action") == "new_window" or str(last_opt.get("id") or "").startswith("__new__:"):
+                    visible = indexed[:MAX_PER_GROUP - 1] + [indexed[-1]]
+                else:
+                    visible = indexed[:MAX_PER_GROUP]
+            else:
+                visible = indexed
+            flat_idx += len(raw_opts)
+
+            for k, o in visible:
                 row_top = y
                 lab = canvas.create_text(pad + 14, row_top + 11, text=o.get("label") or "", fill=FG,
                                          font=f_opt, anchor="nw", width=inner_w - 28)
@@ -366,12 +380,11 @@ def popups() -> int:
                 canvas.tag_lower(rid)
                 shadow = rr(pad, row_top + 2, W - pad, row_bottom + 2, 16, row_shadow, "")
                 canvas.tag_lower(shadow, rid)
-                tag = f"row{flat_idx}"
+                tag = f"row{k}"
                 canvas.addtag_withtag(tag, lab)
                 canvas.addtag_withtag(tag, rid)
                 for item in canvas.find_overlapping(pad, row_top, W - pad, row_bottom):
                     canvas.addtag_withtag(tag, item)
-                k = flat_idx
                 if multi:
                     canvas.tag_bind(tag, "<Button-1>", lambda e, qq=q, i=k: pick(qq, i))
                 else:
@@ -381,7 +394,6 @@ def popups() -> int:
                                 canvas.itemconfig(iid, **({"fill": ROW_HOVER, "outline": "#5C7CFA", "width": 2} if sel.get(qq) == i else {"fill": ROW, "outline": ro, "width": 1}))))
                 drawn.append((q, k, rid, row_outline))
                 y = row_bottom + 9
-                flat_idx += 1
 
             box_fill = "#EEF3FC" if kind == "project" else "#F7F2EC"
             box_outline = "#DCE6F8" if kind == "project" else "#EBE2D6"
@@ -505,8 +517,14 @@ def popups() -> int:
 
 
 def main() -> int:
+    import sys
+    _here = str(Path(__file__).resolve().parent)
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    import paths  # noqa: E402
+
     ap = argparse.ArgumentParser(description="系统级选窗卡片服务")
-    ap.add_argument("--port", type=int, default=os.environ.get("CARD_PORT", str(DEFAULT_PORT)))
+    ap.add_argument("--port", type=int, default=paths.card_port(DEFAULT_PORT))
     ap.add_argument("--no-popup", action="store_true")
     a = ap.parse_args()
     if not 1 <= a.port <= 65535:

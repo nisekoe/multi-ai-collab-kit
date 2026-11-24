@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "channel": "stable",
   "releasedAt": "2026-11-24",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.4.0.zip",
-      "sha256": "b7fe6f62b45b4af1cce25bc10e17ed6bf506a2749f53a77d5063ee7dad0bc361",
-      "size": 206573
+      "name": "kit-0.5.0.zip",
+      "sha256": "d5054af9a4c6a4cd04bf7f592212bd471f042a891474674f65e2158f7a2316f3",
+      "size": 215271
     }
   ],
   "plugins": [],
-  "notes": "公开包瘦身划界：只保留跨平台选窗投递与确定性安装校验最小核心"
+  "notes": "分组选窗每组支持新建窗口并发送、桌面卡片拉起规范与端口三级配置"
 }
