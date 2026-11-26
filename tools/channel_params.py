@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -341,9 +342,64 @@ def resolve_target(role: str, cwd: str = "", side: dict | None = None) -> dict:
     return {"ok": False, "http": status,
             "error": body.get("error") or "unknown",
             "detail": body.get("detail") or "",
-            "candidates": body.get("candidates") or [],
+            "candidates": _enrich_candidates(body.get("candidates") or []),
             "seen": body.get("seen") or [],
             "hint": body.get("hint") or ""}
+
+
+def _clean_title(val) -> str:
+    """安全清洗标题文本：仅接受非空字符串，去除换行与控制字符。"""
+    if not isinstance(val, str):
+        return ""
+    cleaned = "".join(" " if ch in "\r\n\t" else ch for ch in val if ord(ch) >= 32 or ch in "\r\n\t")
+    cleaned = " ".join(cleaned.split()).strip()
+    return cleaned[:60] + ("…" if len(cleaned) > 60 else "")
+
+
+def _dsh_session_title(session_id: str) -> str:
+    """从本机 DSH session_projcache 读取会话标题；严格校验 session_id 合法文件名，异常不影响保留候选。"""
+    sid = str(session_id or "").strip()
+    if not sid or not re.match(r"^[A-Za-z0-9._-]+$", sid):
+        return ""
+    try:
+        import session_identity  # noqa: E402
+        base = os.path.join(session_identity.dsh_home(), "storages", "session_projcache", "sessions")
+        p = os.path.join(base, sid + ".json")
+        if not os.path.isfile(p):
+            return ""
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            data = json.load(fh)
+        rows = (data.get("record") or {}).get("rows") or {}
+        title_val = _clean_title((rows.get("title") or {}).get("val"))
+        if title_val:
+            return title_val
+        turns = ((rows.get("turnOutline") or {}).get("val") or {}).get("turns") or []
+        if turns and isinstance(turns[0], dict):
+            prompt = _clean_title(turns[0].get("prompt"))
+            if prompt:
+                return prompt[:24] + ("…" if len(prompt) > 24 else "")
+        return "（空白新对话）"
+    except Exception:
+        return "（标题读取失败）"
+
+
+def _enrich_candidates(cands: list | None) -> list[dict]:
+    out: list[dict] = []
+    for c in (cands or []):
+        if not isinstance(c, dict):
+            continue
+        item = dict(c)
+        existing = _clean_title(item.get("title"))
+        if existing:
+            item["title"] = existing
+        else:
+            t = _dsh_session_title(str(item.get("sessionId") or ""))
+            if t:
+                item["title"] = t
+            elif "title" in item:
+                item["title"] = ""
+        out.append(item)
+    return out
 
 
 def resolve_desktop_session(side: dict | None = None, explicit: str = "") -> dict:

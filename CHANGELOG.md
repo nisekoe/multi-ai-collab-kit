@@ -1,5 +1,16 @@
 # 变更记录
 
+## 0.8.0（2026-11-26）
+
+- **轻量核心服务统一自愈底座（`service_ensure.py` v2）＋真实桌面与 Tk 心跳健康检查（`card_service.py` v5）**：
+  - 新增 `templates/services.json`（由 `init_hub.py` 初始化至 `_state/services.json`）与 `tools/service_ensure.py`（v2）：提供 `check()` / `ensure()`、按 `task_name` 聚合的跨进程文件锁（锁超时严禁重复触发调度）、单调时钟总超时预算、受限响应体读取，以及 CLI `--list` / `--check` / `--register-card-task`；严禁在 AI 进程树内直接 `Popen` 桌面 GUI，统一经 Windows 交互式计划任务拉起并严格校验 `service`、`desktop_ok` 与 `tk_ready`。
+  - `tools/card_service.py` 升级 v5：`/api/health` 新增 `service="card_service"`、`version=5`、`tk_ready`、`tk_heartbeat_age_s`、`tk_error`；Tk 弹窗循环未就绪时 `/api/request` 返回 `503`；端口绑定或 Tk 初始化失败主流程直接非零退出；卡片编号改为服务端强制生成，落盘改为锁内 `mkstemp` + `fsync` + `os.replace` 原子写入。
+  - `tools/ensure_card_service.py` 保留原有 Python 与 CLI 接口 100% 兼容，底层委托 `service_ensure.ensure("card_service")`。
+  - `tools/ask_card.py` 发卡前自动调用 `service_ensure.ensure("card_service")`，自愈失败时抛出明确中文故障原因。
+- **DSH 候选会话标题自动补全与输入加固**：
+  - `tools/channel_params.py` 新增 `_clean_title()`、`_dsh_session_title()` 与 `_enrich_candidates()`，严格校验 `sessionId` 合法文件名、清洗换行与控制字符，从本机 DSH `session_projcache` 读取标题或首轮提示前 24 字补齐 `candidates[].title`。
+  - `tools/reach_dsh.py` 在打印 `binding_invalid` / `ambiguous` 候选时同步展示 `「<title>」`。
+
 ## 0.6.0（2026-11-24）
 
 - **DSH 选窗卡片与一键新建会话直投**：

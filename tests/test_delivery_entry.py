@@ -45,6 +45,8 @@ class CardHandler(BaseHTTPRequestHandler):
         self.reply({"id": "fixture-card"})
 
     def do_GET(self):
+        if self.path.startswith("/api/health"):
+            return self.reply({"service": "card_service", "ok": True, "desktop_ok": True, "tk_ready": True})
         choice = getattr(self.server, "answer_choice", 1)
         payload = {"status": "answered", "choice": choice}
         if hasattr(self.server, "desktop_draft_requested"):

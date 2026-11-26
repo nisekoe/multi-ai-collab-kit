@@ -1,0 +1,15 @@
+{
+  "_note": "本机轻量核心常驻服务统一登记表。AI 工具发现服务不通时走 service_ensure.py 自动通过宿主机计划任务拉起，不在 AI 进程树内直接 Popen 桌面程序。",
+  "services": {
+    "card_service": {
+      "label": "系统选窗卡片服务",
+      "host": "127.0.0.1",
+      "port": 8790,
+      "health_url": "http://127.0.0.1:8790/api/health",
+      "fallback_url": "http://127.0.0.1:8790/api/pending",
+      "task_name": "MultiAICollab-CardService",
+      "requires_interactive_desktop": true,
+      "wait_seconds": 8.0
+    }
+  }
+}

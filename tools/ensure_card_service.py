@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""卡片服务的「纪律性唤醒」脚本：任何协作发起前先确保它在跑。
+"""卡片服务的「纪律性唤醒」脚本（已接入 service_ensure 统一底座）。
 
-规则（按用户 2026-11-23 的要求）：
+规则：
 1. 只负责「确保服务活着」，不负责弹卡；
-2. 幂等：已在跑就立刻返回，不重复起；
-3. 失败要报原因，不静默；
-4. 可被任何脚本 import：ensure() -> (ok, detail)。
+2. 幂等：已在跑且为真实桌面实例就立刻返回，不重复起；
+3. 严禁直接 Popen：统一走 service_ensure.ensure("card_service") 经宿主机交互式计划任务拉起；
+4. 失败必报明确原因，不静默；
+5. 保持原有 alive() / ensure(wait=8.0) 与 CLI JSON 输出完全兼容。
 
 退出码：0 在跑/已拉起；1 拉不起来。
 """
@@ -14,61 +15,33 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 import sys
-import time
-import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 import paths  # noqa: E402
+import service_ensure  # noqa: E402
 
 BASE = "http://127.0.0.1:%d" % paths.card_port()
-PYW = Path(sys.executable).with_name("pythonw.exe") if os.name == "nt" else Path(sys.executable)
-if not PYW.is_file():
-    PYW = Path(sys.executable)
-SERVICE = HERE / "card_service.py"
-LOG = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
-       / ".multi-ai-collab-kit" / "logs" / "card_service_boot.log")
 
 
 def alive(timeout: float = 2.0) -> bool:
-    try:
-        with urllib.request.urlopen(BASE + "/api/pending", timeout=timeout) as response:
-            response.read()
-        return True
-    except Exception:
-        return False
+    ok, _ = service_ensure.check("card_service", timeout=timeout)
+    return ok
 
 
 def ensure(wait: float = 8.0) -> tuple[bool, str]:
-    if alive():
-        return True, "already_running"
-    if not SERVICE.is_file():
-        return False, "service_file_missing"
-    exe = str(PYW) if PYW.is_file() else sys.executable
-    try:
-        LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(LOG, "a", encoding="utf-8") as fh:
-            fh.write(time.strftime("%Y-%m-%d %H:%M:%S ensure: starting\n"))
-        subprocess.Popen([exe, str(SERVICE)], cwd=str(HERE),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
-    except Exception as exc:
-        return False, f"spawn_failed: {exc}"
-    deadline = time.time() + wait
-    while time.time() < deadline:
-        time.sleep(0.6)
-        if alive():
-            return True, "started"
-    return False, "started_but_not_listening"
+    return service_ensure.ensure("card_service", wait=wait)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="确保本机选窗卡片服务可用")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    parser = argparse.ArgumentParser(description="确保本机选窗卡片服务可用（走宿主机交互式计划任务）")
     parser.add_argument("--wait", type=float, default=8.0, help="等待服务启动的秒数")
     args = parser.parse_args(argv)
     ok, detail = ensure(args.wait)

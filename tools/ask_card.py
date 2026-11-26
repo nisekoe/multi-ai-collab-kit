@@ -14,6 +14,7 @@ _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import paths  # noqa: E402
+import service_ensure  # noqa: E402
 
 
 def _request_card(payload: dict, flat_options: list[dict], timeout: float) -> dict | None:
@@ -22,6 +23,9 @@ def _request_card(payload: dict, flat_options: list[dict], timeout: float) -> di
         raise ValueError("CARD_PORT 或选窗等待时间无效")
     if not flat_options:
         raise ValueError("卡片选项不能为空")
+    ok, detail = service_ensure.ensure("card_service")
+    if not ok:
+        raise OSError(f"选窗卡片服务未生效，尝试自动拉起失败：{detail}")
     base = f"http://127.0.0.1:{port}"
     opener = build_opener(ProxyHandler({}))
 

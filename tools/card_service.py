@@ -20,7 +20,9 @@ import ctypes
 import json
 import os
 import queue
+import re
 import secrets
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +37,12 @@ IS_WINDOWS = os.name == "nt"
 HOST = "127.0.0.1"  # 卡片服务没有鉴权，固定只听本机；端口可用 CARD_PORT 改
 DEFAULT_PORT = 8790
 _inbox: "queue.Queue[tuple[dict, str]]" = queue.Queue()
+_CARD_LOCK = threading.Lock()
+_QID_RE = re.compile(r"^c[A-Za-z0-9_-]{3,48}$")
+_TK_READY = False
+_TK_HEARTBEAT = 0.0
+_TK_ERROR = ""
+_TK_HEARTBEAT_MAX_AGE = 10.0
 
 BG = "#FAFBFD"
 FG = "#1E293B"
@@ -182,19 +190,93 @@ def _fade_close(win, stack: list, ms: int = 7) -> None:
     step(ms)
 
 
+def _valid_qid(qid: str) -> bool:
+    return isinstance(qid, str) and bool(_QID_RE.match(qid))
+
+
 def _write(rec: dict) -> None:
+    qid = str(rec.get("id") or "")
+    if not _valid_qid(qid):
+        raise ValueError(f"非法卡片编号：{qid!r}")
     CARD_DIR.mkdir(parents=True, exist_ok=True)
-    (CARD_DIR / f"{rec['id']}.json").write_text(json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
+    target = CARD_DIR / f"{qid}.json"
+    payload = json.dumps(rec, ensure_ascii=False, indent=2)
+    with _CARD_LOCK:
+        fd, tmp_name = tempfile.mkstemp(prefix=f"{qid}.", suffix=".tmp", dir=str(CARD_DIR))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, target)
+        except Exception:
+            try:
+                if os.path.exists(tmp_name):
+                    os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
 
 def _read(qid: str) -> dict | None:
+    if not _valid_qid(qid):
+        return None
     p = CARD_DIR / f"{qid}.json"
     if not p.is_file():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        with _CARD_LOCK:
+            return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _desktop_info() -> dict:
+    """检查当前卡片服务进程是否跑在宿主机真实交互式桌面（WinSta0\\Default），防 AI 隔离环境假活。"""
+    pid = os.getpid()
+    if not IS_WINDOWS:
+        return {"ok": True, "pid": pid, "session_id": -1, "winstation": "non-win", "desktop": "non-win", "desktop_ok": True}
+    session_id = -1
+    winsta = ""
+    desk = ""
+    try:
+        sid = ctypes.c_ulong(0)
+        if ctypes.windll.kernel32.ProcessIdToSessionId(pid, ctypes.byref(sid)):
+            session_id = int(sid.value)
+    except Exception:
+        pass
+    try:
+        UOI_NAME = 2
+        hwinsta = ctypes.windll.user32.GetProcessWindowStation()
+        if hwinsta:
+            buf = ctypes.create_unicode_buffer(128)
+            needed = ctypes.c_ulong(0)
+            if ctypes.windll.user32.GetUserObjectInformationW(hwinsta, UOI_NAME, buf, ctypes.sizeof(buf), ctypes.byref(needed)):
+                winsta = buf.value
+        hdesk = ctypes.windll.user32.GetThreadDesktop(ctypes.windll.kernel32.GetCurrentThreadId())
+        if hdesk:
+            buf2 = ctypes.create_unicode_buffer(128)
+            needed2 = ctypes.c_ulong(0)
+            if ctypes.windll.user32.GetUserObjectInformationW(hdesk, UOI_NAME, buf2, ctypes.sizeof(buf2), ctypes.byref(needed2)):
+                desk = buf2.value
+    except Exception:
+        pass
+    desktop_ok = (session_id > 0) and (winsta.lower() == "winsta0") and (desk.lower() == "default")
+    hb_age = round(time.monotonic() - _TK_HEARTBEAT, 3) if _TK_HEARTBEAT > 0 else -1.0
+    tk_alive = bool(_TK_READY and _TK_HEARTBEAT > 0 and hb_age <= _TK_HEARTBEAT_MAX_AGE)
+    return {
+        "service": "card_service",
+        "version": 5,
+        "ok": bool(desktop_ok and tk_alive),
+        "pid": pid,
+        "session_id": session_id,
+        "winstation": winsta,
+        "desktop": desk,
+        "desktop_ok": desktop_ok,
+        "tk_ready": tk_alive,
+        "tk_heartbeat_age_s": hb_age,
+        "tk_error": _TK_ERROR,
+    }
 
 
 def _pending() -> list[dict]:
@@ -223,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.startswith("/api/health"):
+            return self._send(200, json.dumps(_desktop_info(), ensure_ascii=False).encode())
         if self.path.startswith("/api/pending"):
             return self._send(200, json.dumps(_pending(), ensure_ascii=False).encode())
         if self.path.startswith("/api/result"):
@@ -260,10 +344,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(400, b'{"error":"bad json"}')
         if self.path.startswith("/api/request"):
+            health = _desktop_info()
+            if not health.get("ok"):
+                return self._send(503, json.dumps({
+                    "error": "popup_loop_not_ready",
+                    "desktop_ok": health.get("desktop_ok"),
+                    "tk_ready": health.get("tk_ready"),
+                    "tk_error": health.get("tk_error") or "",
+                }, ensure_ascii=False).encode())
             draft_prompt = data.get("codex_draft_prompt", "")
             if not isinstance(draft_prompt, str) or (draft_prompt and not codex_draft.prompt_fits(draft_prompt)):
                 return self._send(400, b'{"error":"invalid desktop draft"}')
-            qid = ("c" + secrets.token_hex(12)) if draft_prompt else (data.get("id") or ("c" + secrets.token_hex(4)))
+            qid = "c" + secrets.token_hex(12)
             groups = _norm(data)
             rec = {"id": qid, "title": data.get("title") or "选哪一个？",
                    "subtitle": data.get("subtitle") or data.get("question") or "",
@@ -275,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps({"id": qid}, ensure_ascii=False).encode())
         if self.path.startswith("/api/answer"):
             qid = str(data.get("id") or "")
+            if not _valid_qid(qid):
+                return self._send(400, b'{"error":"invalid id"}')
             rec = _read(qid)
             if not rec:
                 return self._send(404, b'{"error":"missing"}')
@@ -515,6 +609,8 @@ def popups() -> int:
         live[rec.get("id", "")] = win
 
     def poll():
+        global _TK_HEARTBEAT
+        _TK_HEARTBEAT = time.monotonic()
         try:
             while True:
                 build(*_inbox.get_nowait())
@@ -551,13 +647,21 @@ def popups() -> int:
                 _fade_close(win, stack)
         root.after(60000, sweep)
 
+    global _TK_READY, _TK_HEARTBEAT, _TK_ERROR
+    _TK_ERROR = ""
+    _TK_HEARTBEAT = time.monotonic()
+    _TK_READY = True
     root.after(5000, sweep)
     root.after(300, poll)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        _TK_READY = False
     return 0
 
 
 def main() -> int:
+    global _TK_ERROR, _TK_READY
     import sys
     _here = str(Path(__file__).resolve().parent)
     if _here not in sys.path:
@@ -571,17 +675,33 @@ def main() -> int:
     if not 1 <= a.port <= 65535:
         ap.error("--port 或 CARD_PORT 必须在 1–65535 之间")
     CARD_DIR.mkdir(parents=True, exist_ok=True)
-    threading.Thread(target=serve, args=(a.port,), daemon=True).start()
+    try:
+        server = ThreadingHTTPServer((HOST, a.port), Handler)
+    except OSError as exc:
+        print(f"卡片服务绑定 {HOST}:{a.port} 失败，立即退出：{exc}", file=sys.stderr, flush=True)
+        return 1
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"卡片服务 http://{HOST}:{a.port}/", flush=True)
     if a.no_popup:
-        while True:
-            time.sleep(3600)
+        _TK_ERROR = "no_popup_mode"
+        try:
+            while True:
+                time.sleep(3600)
+        finally:
+            server.shutdown()
+            server.server_close()
     try:
         return popups()
     except Exception as exc:
-        print("弹窗不可用，退回网页模式：", exc, flush=True)
-        while True:
-            time.sleep(3600)
+        _TK_READY = False
+        _TK_ERROR = f"tk_init_failed:{exc}"
+        print(f"弹窗循环启动失败，立即退出：{exc}", file=sys.stderr, flush=True)
+        try:
+            server.shutdown()
+            server.server_close()
+        except Exception:
+            pass
+        return 1
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 TEMPLATES = {
     "AGENTS.md": "AGENTS.md",
     "通道.json": "_state/通道.json",
+    "services.json": "_state/services.json",
     "cordis.patch.yml": "cordis.patch.yml",
 }
 
@@ -76,9 +77,11 @@ def create(root: Path, archive_id: str | None, force: bool = False) -> None:
 
     print(f"工作根 {root}（archive_id={archive_id}）")
     print("通道配置", root / TEMPLATES["通道.json"])
+    print("服务登记", root / TEMPLATES["services.json"])
     print("本机指针", pointer)
     command = "mack-init-rules" if __package__ else "python tools/init_rules.py"
     print(f'把规则写入此工作根：{command} --root "{root}"')
+    print("检查轻量服务：python tools/service_ensure.py --list（Windows 首次可运行 --register-card-task 注册交互式卡片任务）")
 
 
 def main(argv=None) -> int:

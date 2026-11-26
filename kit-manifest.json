@@ -1,16 +1,16 @@
 {
   "kit": "multi-ai-collab-kit",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "channel": "stable",
-  "releasedAt": "2026-11-24",
+  "releasedAt": "2026-11-26",
   "minDsh": "0.4.0",
   "assets": [
     {
-      "name": "kit-0.6.0.zip",
-      "sha256": "",
-      "size": 0
+      "name": "kit-0.8.0.zip",
+      "sha256": "66b59efde58406a98f1587ef71e599db39437a1836e8eeb1fe638221a3fcb42c",
+      "size": 244477
     }
   ],
   "plugins": [],
-  "notes": "DSH 选窗与一键新建会话直投、Harbor 绕过系统代理、Porta 绑定单一正本与卡片一步直投、档位标签自动补齐"
+  "notes": "轻量核心服务自愈底座 service_ensure v2、卡片服务 v5（Tk 心跳与原子写）及 DSH 候选标题补全"
 }

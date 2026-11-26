@@ -4,7 +4,11 @@
 
 ## 一、启动与选窗规范
 
-1. 在工具目录运行 `python tools/card_service.py` 启动桌面卡片服务（也可由脚本调 `python tools/ensure_card_service.py` 自动唤醒）。仅在无桌面环境（如 SSH）或不需要弹窗时加 `--no-popup`。
+1. 推荐使用统一自愈入口注册并管理桌面卡片服务：
+   - Windows 首次配置可运行 `python tools/service_ensure.py --register-card-task` 注册交互式普通权限计划任务（`MultiAICollab-CardService`，登录后自动启动，不以管理员权限运行）。
+   - 任何脚本在发卡前会自动调用 `service_ensure.ensure("card_service")`（或兼容入口 `ensure_card_service.ensure()`）通过宿主机计划任务自愈唤醒，**严禁在 AI 命令行进程树内直接 `Popen` 桌面卡片服务**（否则会因会话隔离导致“端口假活、桌面隐身”）。
+   - 查看服务状态与健康检查：`python tools/service_ensure.py --list`（卡片服务暴露 `GET /api/health`，返回 `desktop_ok` 字段用于识别隔离桌面假活）。
+   - 手动在真实桌面前台调试时，可在工具目录运行 `python tools/card_service.py`；仅在无桌面环境（如 SSH）或不需要弹窗时加 `--no-popup`。
 2. **禁止 AI 主动拉起浏览器**：调用 `tools/send_codex.py --ask` 发起选窗后，桌面右下角会自动弹出分组小卡片，AI 应安静等待用户点击，**不要替用户打开浏览器**。网页地址仅作无桌面环境下的手动兜底。
 3. 预演命令：`python tools/send_codex.py --ask --text "选窗试验" --dry-run`。卡片按项目组和「会话区（无项目分类）」分组展示，每个分组底部都附带「＋ 新建窗口并发送」选项（无活跃窗口时也可直接在无项目分类新建）；也可用 `--new --new-cwd <目录>` 直接新建并预演。
 4. 先确认正文和目标，之后再用同一入口实际投递。用 `--task` 可保存本次选择，预演不写入任务选择。

@@ -271,7 +271,9 @@ def main(argv=None) -> int:
             print("绑定窗已不可用（%s），剔除归档后检测到新活候选，需人确认（不自动挑）："
                   % (got.get("verify_error") or err))
             for c in (got.get("candidates") or []):
-                print("  候选 %s（创建 %s）" % (c.get("sessionId"), c.get("createdAt")))
+                t = (c.get("title") or "").strip()
+                t_part = f"「{t}」 " if t else ""
+                print("  候选 %s%s（创建 %s）" % (t_part, c.get("sessionId"), c.get("createdAt")))
             if not (got.get("candidates") or []):
                 print("  （当前没有合格活候选；等收件方开窗口后再投。）")
             print("  明确给 --session-id，或在 通道.json 更新 desktop_bot.bound_session。")
@@ -288,7 +290,9 @@ def main(argv=None) -> int:
         if err == "ambiguous":
             print("目标歧义：%s" % (detail or "有多个合格会话"))
             for c in (got.get("candidates") or []):
-                print("  候选 %s" % c.get("sessionId"))
+                t = (c.get("title") or "").strip()
+                t_part = f"「{t}」 " if t else ""
+                print("  候选 %s%s" % (t_part, c.get("sessionId")))
             print("  要我投哪个，得明确给 --session-id，或在 通道.json 登记一次 desktop_bot.bound_session。")
             record(dict(base, candidates=got.get("candidates"), stage="resolve",
                                reason="ambiguous", result_known=True))

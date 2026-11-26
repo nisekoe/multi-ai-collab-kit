@@ -78,6 +78,8 @@ class _ScriptedCardHandler(BaseHTTPRequestHandler):
         self._reply({"id": f"card-{idx}"})
 
     def do_GET(self):
+        if self.path.startswith("/api/health"):
+            return self._reply({"service": "card_service", "ok": True, "desktop_ok": True, "tk_ready": True})
         qid = self.path.split("id=", 1)[-1] if "id=" in self.path else "card-0"
         idx = int(qid.split("-")[-1])
         ans = self.server.answers[idx]

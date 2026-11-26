@@ -15,6 +15,7 @@
 ## 二、接口（只绑 127.0.0.1）
 
 - `POST /api/request`：`{title, subtitle, groups:[{title, kind, q, options:[{label, description, tags, id}]}]}`
+- `GET  /api/health`：返回 `{ok, pid, session_id, winstation, desktop, desktop_ok}`，用于识别是否运行在真实交互式桌面（`WinSta0\Default`）
 - `GET  /api/pending`：还有哪些没选
 - `POST /api/answer`：`{id, choice}`（单选）或 `{id, choices:[...]}`（多问）
 - `GET  /api/result?id=`：取结果
